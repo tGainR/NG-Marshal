@@ -206,7 +206,7 @@ export default function Home() {
       <footer className="max-w-6xl mx-auto px-6 py-8 flex flex-wrap items-center justify-between gap-3 text-[12px] text-[#5C6B80]">
         <Wordmark compact />
         <span>
-          Navin Group · O&amp;M Tech · pilot v0.5 · backend:{" "}
+          NG Marshal · Navin Group O&amp;M Tech · pilot v0.8 · backend:{" "}
           <b className="text-[#1F3864]">{process.env.NEXT_PUBLIC_BACKEND === "supabase" ? "shared (Supabase)" : "local device"}</b>
         </span>
         <span>{SHIFT.label}</span>

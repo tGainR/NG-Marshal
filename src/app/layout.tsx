@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ITV Ops — Fleet, Trips & Incentives",
-  description: "Container yard fleet & equipment management — verified trips, live incentives, equipment tracking, command center. Pilot: Mundra EXIM Yard.",
+  title: "NG Marshal — Fleet, Equipment & Control",
+  description: "The master control hub for container-yard operations — verified trips, live incentives, equipment tracking, planning and command center. Pilot: Mundra EXIM Yard.",
 };
 
 export default function RootLayout({

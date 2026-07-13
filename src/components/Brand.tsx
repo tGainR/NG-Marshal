@@ -1,5 +1,7 @@
 // Product lockup — used on home, console and driver surfaces.
-// Working name "ITV Ops" — rename in one place when the final brand is chosen.
+// Brand: "NG Marshal" (Navin Group) — the master control hub. Rename here in one place.
+
+export const APP_NAME = "NG Marshal";
 
 export function LogoMark({ size = 30 }: { size?: number }) {
   return (
@@ -21,11 +23,11 @@ export function Wordmark({ dark = false, compact = false }: { dark?: boolean; co
       <LogoMark size={compact ? 26 : 30} />
       <span className="leading-none">
         <span className={`block font-extrabold tracking-tight ${compact ? "text-[16px]" : "text-[19px]"} ${dark ? "text-white" : "text-[#1F3864]"}`}>
-          ITV&nbsp;Ops
+          <span className="text-[#E8641B]">NG</span>&nbsp;Marshal
         </span>
         {!compact && (
           <span className={`block text-[9.5px] font-bold tracking-[0.18em] uppercase mt-0.5 ${dark ? "text-[#B9C6DE]" : "text-[#5C6B80]"}`}>
-            Fleet · Equipment · Incentives
+            Fleet · Equipment · Control
           </span>
         )}
       </span>
