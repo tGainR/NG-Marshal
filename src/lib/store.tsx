@@ -3,10 +3,10 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from "react";
 import { getDataStore } from "./data";
 import type { DataStore } from "./data/DataStore";
-import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, RateCard, Trip, Vehicle, Vendor, Verification } from "./types";
+import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, RateCard, Site, Trip, Vehicle, Vendor, Verification } from "./types";
 import {
   DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, RATE_CARD, SEED_ISSUES,
-  SEED_TRIPS, SHIFT, SITE, VEHICLES,
+  SEED_TRIPS, SHIFT, SITE, SITES, VEHICLES,
 } from "./seed";
 import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
 import { ImportedContainer, ImportedDriver, ImportedVehicle } from "./importer";
@@ -19,6 +19,8 @@ export interface AppState {
   issues: Issue[];
   assignments: Record<string, Assignment>; // vehicleId → planner assignment
   pool: ImportedContainer[]; // imported container pool (pendency/cutoff files)
+  sites: Site[]; // projects/sites the operator runs
+  activeSiteId: string; // currently-selected site
   vendors: Vendor[]; // vendor master (incl. "own" for directly-employed)
   equipment: Equipment[]; // yard equipment master (reach stackers, forklifts, ECH...)
   operators: Operator[]; // equipment operator master
@@ -58,6 +60,8 @@ type Action =
   | { type: "addDriver"; name: string; phone: string; vendor: string; note?: string }
   | { type: "mapDriver"; vehicleId: string; driverId: string | null }
   | { type: "updateSettings"; rateCard: RateCard; milestoneTeu: number }
+  | { type: "setActiveSite"; siteId: string }
+  | { type: "addSite"; site: Site }
   | { type: "addEquipment"; id: string; equipType: Equipment["type"]; reg: string; vendor: string }
   | { type: "addOperator"; name: string; phone: string; vendor: string }
   | { type: "mapOperator"; equipmentId: string; operatorId: string | null }
@@ -626,10 +630,20 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, equipmentLogs: [log, ...s.equipmentLogs], nextLogId: s.nextLogId + 1, toast: `Logged ${a.hours}h / ${a.moves} moves · ${a.equipmentId}` };
     }
 
+    case "setActiveSite":
+      return { ...s, activeSiteId: a.siteId, toast: `Switched to ${s.sites.find((x) => x.id === a.siteId)?.shortName ?? a.siteId}` };
+
+    case "addSite": {
+      if (s.sites.some((x) => x.id === a.site.id)) return { ...s, toast: "Site already exists" };
+      return { ...s, sites: [...s.sites, a.site], activeSiteId: a.site.id, toast: `Site added: ${a.site.name}` };
+    }
+
     case "hydrate":
       return {
         ...s,
         ...a.state,
+        sites: a.state.sites ?? s.sites,
+        activeSiteId: a.state.activeSiteId ?? s.activeSiteId,
         pool: a.state.pool ?? s.pool ?? [],
         equipment: a.state.equipment ?? s.equipment ?? [],
         operators: a.state.operators ?? s.operators ?? [],
@@ -658,6 +672,8 @@ const initial: AppState = {
   trips: SEED_TRIPS,
   issues: SEED_ISSUES,
   pool: [],
+  sites: SITES,
+  activeSiteId: SITE.id,
   vendors: [
     { id: "active", name: "Active", type: "vendor" },
     { id: "own", name: "Own (direct employment)", type: "own" },
@@ -688,7 +704,7 @@ const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } 
 // Persistable subset — sim-only fields (now, offer, toast, celebration, nextOfferIn) never sync.
 const PERSIST_KEYS = [
   "drivers", "vehicles", "trips", "issues", "assignments", "pool",
-  "vendors", "rateCard", "milestoneTeu",
+  "vendors", "rateCard", "milestoneTeu", "sites", "activeSiteId",
   "equipment", "operators", "equipmentLogs", "nextLogId",
   "nextTripId", "nextIssueId", "passesThisShift", "milestoneHit",
 ] as const;

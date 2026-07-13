@@ -1,6 +1,14 @@
-// Core domain types — universal core, Mundra is a site profile (see design docs)
+// Core domain types — universal core, each site is a project profile (see design docs)
 
-export type MovementType = "import" | "export" | "scanning" | "check_package";
+export type MovementType = "import" | "export" | "scanning" | "check_package" | "ftwz";
+
+export const MOVEMENT_LABEL: Record<MovementType, string> = {
+  import: "Import",
+  export: "Export",
+  scanning: "Scanning",
+  check_package: "Check package",
+  ftwz: "FTWZ movement",
+};
 
 export type VehicleStatus =
   | "running"
@@ -41,10 +49,21 @@ export type IssueStatus = "open" | "acknowledged" | "escalated" | "resolved";
 // Roles the product is designed around (driver / supervisor / manager / docs).
 // No auth/RBAC wired yet — see TEAM-HANDOFF.md "Auth & roles" for what to build.
 
+// A project/site the operator runs. Mundra EXIM is the first; the model is built to
+// scale to other sites (incl. external-transport sites with customer/driver management).
+export interface SiteDestination {
+  id: string; // "MICT", "FTWZ"
+  label: string; // display name
+  kind: "terminal" | "ftwz" | "company"; // grouping / dashboard treatment
+}
+
 export interface Site {
   id: string;
   name: string;
-  terminals: string[]; // zone ids of terminal type
+  shortName: string;
+  kind: "internal-transport" | "external-transport";
+  destinations: SiteDestination[]; // terminals + FTWZ + (future) companies — the dashboard tiles
+  terminals: string[]; // derived: destination ids of kind "terminal" (kept for existing code)
   monthlyTeuTarget: number;
   shiftTeuTarget: number;
   perItvTeuTarget: number; // milestone quest threshold

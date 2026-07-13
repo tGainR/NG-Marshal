@@ -1,20 +1,35 @@
 import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator } from "./types";
 
 // ——— Mundra EXIM yard site profile ———
+// Destinations = the 4 container terminals + FTWZ (Free Trade Warehousing Zone, now live).
+// These are the tiles that show ITVs-deployed + figures on the dashboard.
 
 export const SITE: Site = {
   id: "mundra-exim",
   name: "Mundra EXIM Yard",
+  shortName: "Mundra EXIM",
+  kind: "internal-transport",
+  destinations: [
+    { id: "MICT", label: "MICT", kind: "terminal" },
+    { id: "T2", label: "T2", kind: "terminal" },
+    { id: "CT2", label: "CT2", kind: "terminal" },
+    { id: "CT3", label: "CT3", kind: "terminal" },
+    { id: "CT4", label: "CT4", kind: "terminal" },
+    { id: "FTWZ", label: "FTWZ", kind: "ftwz" },
+  ],
   terminals: ["MICT", "T2", "CT2", "CT3", "CT4"],
   monthlyTeuTarget: 40000,
   shiftTeuTarget: 900,
   perItvTeuTarget: 10, // milestone: 10+ TEU in a shift (user-set, more tiers later)
 };
 
+// All projects/sites the operator runs. Scalable — add sites here or via the console.
+export const SITES: Site[] = [SITE];
+
 export const RATE_CARD: RateCard = {
   version: "v1 · pilot",
   effectiveFrom: "2026-07-01",
-  perTeu: { import: 80, export: 80, scanning: 60, check_package: 60 },
+  perTeu: { import: 80, export: 80, scanning: 60, check_package: 60, ftwz: 80 },
   nightMultiplier: 1.2,
   milestoneBonus: 100,
   abortedTripCredit: 40,

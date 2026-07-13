@@ -130,6 +130,37 @@ export default function Home() {
         </div>
       </header>
 
+      {/* projects / sites */}
+      <section className="max-w-6xl mx-auto px-6 pt-12 pb-2">
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="text-[13px] font-bold tracking-[0.12em] uppercase text-[#5C6B80]">Projects / Sites</h2>
+          <span className="text-[12px] text-[#5C6B80]">{state.sites.length} active · scalable to more</span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {state.sites.map((s) => (
+            <Link key={s.id} href="/console" className="group bg-white rounded-xl border border-[#D8DEE7] p-5 hover:shadow-lg transition-shadow">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[16px] font-bold">{s.name}</h3>
+                <span className="text-[10px] font-bold text-[#177A47] bg-[#E3F4EB] rounded-full px-2.5 py-0.5">LIVE</span>
+              </div>
+              <p className="text-[12px] text-[#5C6B80] mt-1">
+                {s.kind === "internal-transport" ? "Internal transport" : "External transport"} · {s.destinations.length} destinations
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {s.destinations.map((d) => (
+                  <span key={d.id} className={`text-[10px] font-bold rounded px-1.5 py-0.5 font-mono ${d.kind === "ftwz" ? "bg-[#FFF1E8] text-[#E8641B]" : "bg-[#EDF0F4] text-[#5C6B80]"}`}>{d.label}</span>
+                ))}
+              </div>
+              <p className="text-[13px] font-bold text-[#1F3864] mt-3 group-hover:text-[#E8641B]">Open project →</p>
+            </Link>
+          ))}
+          <div className="rounded-xl border-2 border-dashed border-[#C9D4E4] p-5 flex flex-col items-center justify-center text-center text-[#5C6B80]">
+            <p className="text-[13px] font-bold text-[#5C6B80]">+ New project / site</p>
+            <p className="text-[11px] mt-1">Add from the console header — internal or external transport</p>
+          </div>
+        </div>
+      </section>
+
       {/* role entry points */}
       <section className="max-w-6xl mx-auto px-6 py-12">
         <h2 className="text-[13px] font-bold tracking-[0.12em] uppercase text-[#5C6B80] mb-4">Workspaces</h2>
