@@ -86,6 +86,19 @@ export default function ConsolePage() {
 
   const pendencyNow = SHIFT.pendencyStart + SHIFT.pendencyAdd - liveTeu;
 
+  // robust cutoff parser — handles "7/5/26 10:00" (m/d/yy) and "20-06-2026 08:30" (d-m-yyyy)
+  const parseCutoffMs = (raw?: string): number => {
+    if (!raw) return NaN;
+    let m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    if (m) {
+      const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+      return new Date(y, Number(m[1]) - 1, Number(m[2]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+    }
+    m = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+    return Date.parse(raw);
+  };
+
   // hot list: derive from the export pool's real gate cutoffs; fall back to seed examples when empty
   const exportPool = state.pool.filter((c) => c.direction === "export");
   const derivedHot = Object.entries(
@@ -97,7 +110,7 @@ export default function ConsolePage() {
   ).map(([term, rows], i) => {
     const c20 = rows.filter((r) => r.size === "20").length;
     const c40 = rows.filter((r) => r.size === "40").length;
-    const cuts = rows.map((r) => Date.parse(r.cutoff ?? "")).filter((n) => !isNaN(n));
+    const cuts = rows.map((r) => parseCutoffMs(r.cutoff)).filter((n) => !isNaN(n));
     const earliest = cuts.length ? Math.min(...cuts) : NaN;
     const deadlineMin = isNaN(earliest) ? 9999 : Math.round((earliest - Date.now()) / 60000);
     return {
