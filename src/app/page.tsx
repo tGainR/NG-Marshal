@@ -38,6 +38,14 @@ const ROLES = [
     cta: "Open planning",
     accent: false,
   },
+  {
+    href: "/console?tab=equipment",
+    tag: "YARD EQUIPMENT",
+    title: "Equipment Tracker",
+    desc: "Reach stackers, forklifts, ECH — masters, operator mapping, daily hours & moves",
+    cta: "Open equipment",
+    accent: false,
+  },
 ];
 
 const FEATURES = [
@@ -46,7 +54,9 @@ const FEATURES = [
   { icon: "🚚", t: "Pick-and-send assignment", d: "Assign the actual ITV to terminal × movement from a global multi-vendor pool with eligibility tags and driver notes." },
   { icon: "✅", t: "Verified trips", d: "GPS cycle + terminal ticket OCR + yard record — a trip only counts when the three agree. No TOS access needed." },
   { icon: "₹", t: "Incentive engine", d: "Per-TEU rate card with night, boost and milestone rules. Versioned settings; live meter for the driver, ledger and approvals for you." },
+  { icon: "🏗️", t: "Equipment tracker", d: "Reach stackers, 3T/5T forklifts, empty container handlers, side-shifter forklifts — masters, operator linking, daily hours & moves, operator-wise." },
   { icon: "🛠️", t: "Issues & audit", d: "Standby, gate rejections, breakdowns, plan changes — typed, owned, escalated. Every manual entry stamped who/when/why." },
+  { icon: "🧩", t: "One system, many assets", d: "ITVs today, yard equipment now — the same masters, mapping and audit pattern extends to any asset class you add next." },
 ];
 
 export default function Home() {
@@ -58,6 +68,7 @@ export default function Home() {
   const poolExp = state.pool.filter((c) => c.direction === "export").length;
   const openIssues = state.issues.filter((i) => i.status !== "resolved").length;
   const paidToday = state.trips.reduce((a, t) => a + (t.earnings?.total ?? 0), 0);
+  const equipRunning = state.equipment.filter((e) => e.status === "running").length;
 
   return (
     <main className="min-h-screen w-full">
@@ -80,14 +91,15 @@ export default function Home() {
       <header className="bg-[#1F3864] text-white border-b-4 border-[#E8641B]">
         <div className="max-w-6xl mx-auto px-6 pt-14 pb-10">
           <p className="text-[11px] font-bold tracking-[0.16em] uppercase text-[#FFB07A] mb-3">
-            Container yard ITV management · pilot
+            Container yard fleet &amp; equipment management · pilot
           </p>
-          <h1 className="text-[clamp(28px,4.5vw,44px)] font-extrabold leading-[1.1] max-w-[22ch] [text-wrap:balance]">
-            Every trip verified. Every rupee visible. Every ITV accounted for.
+          <h1 className="text-[clamp(28px,4.5vw,44px)] font-extrabold leading-[1.1] max-w-[24ch] [text-wrap:balance]">
+            Every trip verified. Every rupee visible. Every asset accounted for.
           </h1>
           <p className="text-[#C9D4E6] mt-4 max-w-[62ch] text-[15px]">
             One system from the terminal&apos;s pendency email to the driver&apos;s incentive — planning, live tracking,
-            issue evidence and payouts, without needing the port&apos;s TOS.
+            issue evidence and payouts, without needing the port&apos;s TOS. ITVs, reach stackers, forklifts and
+            container handlers, one set of masters and one audit trail.
           </p>
           <div className="flex gap-3 mt-7 flex-wrap">
             <Link href="/console" className="bg-[#E8641B] text-white font-bold text-[14px] px-5 py-2.5 rounded-lg hover:brightness-110">
@@ -99,11 +111,12 @@ export default function Home() {
           </div>
 
           {/* live stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-[#2E4470] rounded-xl overflow-hidden mt-10 border border-[#2E4470]">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-[#2E4470] rounded-xl overflow-hidden mt-10 border border-[#2E4470]">
             {[
               { k: "ITVs running", v: `${running}`, s: `of ${SHIFT.itvsAllotted} allotted` },
               { k: "TEUs this shift", v: `${liveTeu}`, s: `target ${SITE.shiftTeuTarget}` },
               { k: "Container pool", v: `${poolImp}`, s: `import · ${poolExp} export` },
+              { k: "Equipment running", v: `${equipRunning}`, s: `of ${state.equipment.length} units` },
               { k: "Incentives accrued", v: fmtInr(paidToday), s: "verified trips" },
               { k: "Open issues", v: `${openIssues}`, s: "owned & tracked" },
             ].map((x) => (

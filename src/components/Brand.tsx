@@ -25,7 +25,7 @@ export function Wordmark({ dark = false, compact = false }: { dark?: boolean; co
         </span>
         {!compact && (
           <span className={`block text-[9.5px] font-bold tracking-[0.18em] uppercase mt-0.5 ${dark ? "text-[#B9C6DE]" : "text-[#5C6B80]"}`}>
-            Fleet · Trips · Incentives
+            Fleet · Equipment · Incentives
           </span>
         )}
       </span>

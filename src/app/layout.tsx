@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ITV Ops — Fleet, Trips & Incentives",
-  description: "Container yard ITV management — verified trips, live incentives, command center. Pilot: Mundra EXIM Yard.",
+  description: "Container yard fleet & equipment management — verified trips, live incentives, equipment tracking, command center. Pilot: Mundra EXIM Yard.",
 };
 
 export default function RootLayout({

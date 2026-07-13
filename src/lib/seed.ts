@@ -1,4 +1,4 @@
-import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob } from "./types";
+import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator } from "./types";
 
 // ——— Mundra EXIM yard site profile ———
 
@@ -161,3 +161,20 @@ export const SHIFT = {
   pendencyStart: 1122,
   pendencyAdd: 191,
 };
+
+// ── Equipment & operator masters (seed examples) ──
+export const OPERATORS: Operator[] = [
+  { id: "op-jignesh", name: "Jignesh Vala", phone: "98250 10101", vendor: "Active", onDuty: true },
+  { id: "op-pravin", name: "Pravin Solanki", phone: "98250 20202", vendor: "Galaxy", onDuty: true },
+  { id: "op-harish", name: "Harish Bhatt", phone: "98250 30303", vendor: "Active", onDuty: true },
+  { id: "op-dilip", name: "Dilip Chauhan", phone: "98250 40404", vendor: "Own", onDuty: false },
+];
+
+export const EQUIPMENT: Equipment[] = [
+  { id: "RS-04", type: "reach_stacker", reg: "GJ12EQ4001", vendor: "Active", status: "running", statusNote: "Yard 2 · stacking", operatorId: "op-jignesh", zone: "Yard 2", tags: [] },
+  { id: "RS-08", type: "reach_stacker", reg: "GJ12EQ4008", vendor: "Galaxy", status: "breakdown", statusNote: "Hydraulic fault · workshop", operatorId: "op-pravin", zone: "Workshop", tags: [] },
+  { id: "FL3T-02", type: "forklift_3t", reg: "GJ12EQ5002", vendor: "Active", status: "running", statusNote: "CFS shed", operatorId: "op-harish", zone: "CFS shed", tags: [] },
+  { id: "FL5T-01", type: "forklift_5t", reg: "GJ12EQ5101", vendor: "Own", status: "no_operator", zone: "Parking", tags: [] },
+  { id: "ECH-01", type: "ech", reg: "GJ12EQ6001", vendor: "Own", status: "standby", statusNote: "Awaiting empty stack job", zone: "Empty yard", tags: [] },
+  { id: "ECHSS-01", type: "forklift_side_shifter", reg: "GJ12EQ6501", vendor: "Active", status: "offline", zone: "Parking", tags: [] },
+];

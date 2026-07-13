@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { useApp, RATE_CARD, SITE, SHIFT, HOT_JOBS } from "@/lib/store";
 import { DEPLOYMENT } from "@/lib/seed";
 import { fmtClock, fmtInr } from "@/lib/incentive";
-import { Issue, VehicleStatus } from "@/lib/types";
+import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, VehicleStatus } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
 
-type Tab = "live" | "planning" | "incentives" | "issues" | "masters";
+type Tab = "live" | "planning" | "incentives" | "issues" | "masters" | "equipment";
 
 const STATUS_STYLE: Record<VehicleStatus, { label: string; cls: string }> = {
   running: { label: "RUNNING", cls: "bg-[#E3F4EB] text-[#177A47]" },
@@ -58,7 +58,7 @@ export default function ConsolePage() {
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "planning" || t === "incentives" || t === "issues" || t === "masters") setTab(t);
+    if (t === "planning" || t === "incentives" || t === "issues" || t === "masters" || t === "equipment") setTab(t);
   }, []);
 
   const completed = state.trips.filter((t) => t.state === "completed");
@@ -204,7 +204,7 @@ Current Pendency:${pendencyNow}
 
         {/* tabs */}
         <div className="flex gap-1.5 mt-5 flex-wrap">
-          {(["live", "planning", "incentives", "issues", "masters"] as Tab[]).map((t) => (
+          {(["live", "planning", "incentives", "issues", "masters", "equipment"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -212,7 +212,7 @@ Current Pendency:${pendencyNow}
                 tab === t ? "bg-[#1F3864] text-white border-[#1F3864]" : "bg-white text-[#5C6B80] border-[#D8DEE7]"
               }`}
             >
-              {t === "live" ? "Live board" : t === "planning" ? "Planning & imports" : t === "incentives" ? "Incentive ledger" : t === "masters" ? "Masters & settings" : `Issues (${openIssues.length})`}
+              {t === "live" ? "Live board" : t === "planning" ? "Planning & imports" : t === "incentives" ? "Incentive ledger" : t === "masters" ? "Masters & settings" : t === "equipment" ? "Equipment" : `Issues (${openIssues.length})`}
             </button>
           ))}
         </div>
@@ -613,6 +613,7 @@ Current Pendency:${pendencyNow}
         )}
 
         {tab === "masters" && <MastersTab />}
+        {tab === "equipment" && <EquipmentTab />}
       </div>
 
       {/* report modal */}
@@ -733,7 +734,7 @@ function MastersTab() {
       {/* ITV MASTER + DRIVER MAPPING */}
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
         <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">
-          ITV / equipment master - driver mapping (editable any day; mostly 1 driver = 1 ITV)
+          ITV master · driver mapping (editable any day; mostly 1 driver = 1 ITV)
         </p>
         <table className="w-full text-[12.5px] min-w-[520px]">
           <thead><tr><Th>ITV</Th><Th>Reg</Th><Th>Vendor</Th><Th>Driver (today)</Th></tr></thead>
@@ -802,6 +803,220 @@ function MastersTab() {
             className="bg-[#1E9E5A] text-white text-[12px] font-bold rounded-md px-4 py-2"
           >+ Add driver</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Equipment: reach stackers, forklifts, ECH — masters, operator mapping, daily hours/moves log ──
+const EQUIP_STATUS_STYLE: Record<string, { label: string; cls: string }> = {
+  running: { label: "RUNNING", cls: "bg-[#E3F4EB] text-[#177A47]" },
+  standby: { label: "STANDBY", cls: "bg-[#FBF1D9] text-[#8A6100]" },
+  breakdown: { label: "BREAKDOWN", cls: "bg-[#FBE4E4] text-[#A83232]" },
+  no_operator: { label: "NO OPERATOR", cls: "bg-[#ECEFF3] text-[#6A7688]" },
+  offline: { label: "OFF DUTY", cls: "bg-[#ECEFF3] text-[#6A7688]" },
+};
+
+const EQUIPMENT_TYPES = Object.keys(EQUIPMENT_TYPE_LABEL) as EquipmentType[];
+
+function EquipmentTab() {
+  const { state, dispatch } = useApp();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [eId, setEId] = useState("");
+  const [eType, setEType] = useState<EquipmentType>("reach_stacker");
+  const [eReg, setEReg] = useState("");
+  const [eVen, setEVen] = useState(state.vendors[0]?.name ?? "Active");
+
+  const [oName, setOName] = useState("");
+  const [oPhone, setOPhone] = useState("");
+  const [oVen, setOVen] = useState(state.vendors[0]?.name ?? "Active");
+
+  const [logEquip, setLogEquip] = useState("");
+  const [logOp, setLogOp] = useState("");
+  const [logHours, setLogHours] = useState("");
+  const [logMoves, setLogMoves] = useState("");
+  const [logNote, setLogNote] = useState("");
+
+  const byType = EQUIPMENT_TYPES.map((t) => ({
+    type: t,
+    items: state.equipment.filter((e) => e.type === t),
+  }));
+
+  const todaysLogs = state.equipmentLogs.filter((l) => l.date === today);
+  const totalHours = todaysLogs.reduce((a, l) => a + l.hours, 0);
+  const totalMoves = todaysLogs.reduce((a, l) => a + l.moves, 0);
+
+  return (
+    <div className="grid gap-5 mt-4">
+      {/* summary */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+        {byType.map(({ type, items }) => {
+          const running = items.filter((e) => e.status === "running").length;
+          return (
+            <div key={type} className="bg-white border border-[#D8DEE7] rounded-lg px-3.5 py-3">
+              <p className="text-[10px] font-bold tracking-[0.08em] uppercase text-[#5C6B80]">{EQUIPMENT_TYPE_LABEL[type]}</p>
+              <p className="text-[20px] font-extrabold tabular-nums mt-0.5">
+                {items.length} <span className="text-[11px] font-semibold text-[#5C6B80]">unit{items.length === 1 ? "" : "s"}</span>
+              </p>
+              <p className="text-[11px] text-[#1E9E5A] font-semibold">{running} running now</p>
+            </div>
+          );
+        })}
+        <div className="bg-[#1F3864] text-white rounded-lg px-3.5 py-3">
+          <p className="text-[10px] font-bold tracking-[0.08em] uppercase text-[#B9C6DE]">Today&apos;s logged usage</p>
+          <p className="text-[20px] font-extrabold tabular-nums mt-0.5">{totalHours}h <span className="text-[13px] font-semibold text-[#B9C6DE]">· {totalMoves} moves</span></p>
+          <p className="text-[11px] text-[#B9C6DE]">{todaysLogs.length} entries today</p>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        {/* EQUIPMENT MASTER */}
+        <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
+          <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">
+            Equipment master · operator mapping
+          </p>
+          <table className="w-full text-[12.5px] min-w-[560px]">
+            <thead><tr><Th>Asset</Th><Th>Type</Th><Th>Vendor</Th><Th>Status</Th><Th>Operator (today)</Th></tr></thead>
+            <tbody>
+              {state.equipment.map((e) => (
+                <tr key={e.id}>
+                  <Td className="font-mono font-bold">{e.id}</Td>
+                  <Td className="text-[11.5px]">{EQUIPMENT_TYPE_LABEL[e.type]}</Td>
+                  <Td>{e.vendor}</Td>
+                  <Td>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${(EQUIP_STATUS_STYLE[e.status] ?? EQUIP_STATUS_STYLE.offline).cls}`}>
+                      {(EQUIP_STATUS_STYLE[e.status] ?? EQUIP_STATUS_STYLE.offline).label}
+                    </span>
+                  </Td>
+                  <Td>
+                    <select
+                      value={e.operatorId ?? ""}
+                      onChange={(ev) => dispatch({ type: "mapOperator", equipmentId: e.id, operatorId: ev.target.value || null })}
+                      className="border border-[#D8DEE7] rounded-md px-2 py-1.5 text-[12px] bg-white min-w-[150px]"
+                    >
+                      <option value="">— no operator</option>
+                      {state.operators.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                    </select>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex gap-2 mt-3 flex-wrap">
+            <input value={eId} onChange={(e) => setEId(e.target.value.toUpperCase())} placeholder="Asset tag (RS-09)" className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px] w-36 font-mono" />
+            <select value={eType} onChange={(e) => setEType(e.target.value as EquipmentType)} className="border border-[#D8DEE7] rounded-md px-2 text-[12px]">
+              {EQUIPMENT_TYPES.map((t) => <option key={t} value={t}>{EQUIPMENT_TYPE_LABEL[t]}</option>)}
+            </select>
+            <input value={eReg} onChange={(e) => setEReg(e.target.value.toUpperCase())} placeholder="Registration" className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px] w-36 font-mono" />
+            <select value={eVen} onChange={(e) => setEVen(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2 text-[12px]">
+              {state.vendors.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+            </select>
+            <button
+              onClick={() => { if (!eId.trim()) return; dispatch({ type: "addEquipment", id: eId.trim(), equipType: eType, reg: eReg.trim(), vendor: eVen }); setEId(""); setEReg(""); }}
+              className="bg-[#1E9E5A] text-white text-[12px] font-bold rounded-md px-4 py-2"
+            >+ Add equipment</button>
+          </div>
+          <p className="text-[11px] text-[#5C6B80] mt-2.5">Covers reach stackers, 3T/5T forklifts, empty container handlers, forklifts with side-shifter. Every mapping change is audited.</p>
+        </div>
+
+        {/* OPERATOR MASTER */}
+        <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
+          <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">Operator master</p>
+          <table className="w-full text-[12.5px] min-w-[420px]">
+            <thead><tr><Th>Name</Th><Th>Phone</Th><Th>Vendor</Th><Th>Equipment (today)</Th></tr></thead>
+            <tbody>
+              {state.operators.map((o) => {
+                const eq = state.equipment.find((e) => e.operatorId === o.id);
+                return (
+                  <tr key={o.id}>
+                    <Td className="font-semibold">{o.name}</Td>
+                    <Td className="font-mono text-[11.5px]">{o.phone || "—"}</Td>
+                    <Td>{o.vendor}</Td>
+                    <Td className="font-mono font-bold">{eq?.id ?? "—"}</Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="flex gap-2 mt-3 flex-wrap">
+            <input value={oName} onChange={(e) => setOName(e.target.value)} placeholder="Operator name" className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px] w-40" />
+            <input value={oPhone} onChange={(e) => setOPhone(e.target.value)} placeholder="Phone" className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px] w-36 font-mono" />
+            <select value={oVen} onChange={(e) => setOVen(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2 text-[12px]">
+              {state.vendors.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+            </select>
+            <button
+              onClick={() => { if (!oName.trim()) return; dispatch({ type: "addOperator", name: oName.trim(), phone: oPhone.trim(), vendor: oVen }); setOName(""); setOPhone(""); }}
+              className="bg-[#1E9E5A] text-white text-[12px] font-bold rounded-md px-4 py-2"
+            >+ Add operator</button>
+          </div>
+          <p className="text-[11px] text-[#5C6B80] mt-2.5">Bulk entry (100+ operators) should go through an Excel import — same pattern as driver master; wire the parser to this list when the file format is confirmed.</p>
+        </div>
+      </div>
+
+      {/* DAILY HOURS / MOVES LOG */}
+      <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
+        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">
+          Daily hours &amp; moves · operator-wise (manual entry until hour-meter/telematics integration)
+        </p>
+        <div className="flex gap-2 flex-wrap items-end mb-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10.5px] font-bold text-[#5C6B80] uppercase">Equipment</span>
+            <select value={logEquip} onChange={(e) => setLogEquip(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2 py-2 text-[12.5px] min-w-[130px]">
+              <option value="">— select —</option>
+              {state.equipment.map((e) => <option key={e.id} value={e.id}>{e.id}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10.5px] font-bold text-[#5C6B80] uppercase">Operator</span>
+            <select value={logOp} onChange={(e) => setLogOp(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2 py-2 text-[12.5px] min-w-[130px]">
+              <option value="">— select —</option>
+              {state.operators.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10.5px] font-bold text-[#5C6B80] uppercase">Hours</span>
+            <input type="number" step="0.5" value={logHours} onChange={(e) => setLogHours(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px] w-20 tabular-nums" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10.5px] font-bold text-[#5C6B80] uppercase">Moves</span>
+            <input type="number" value={logMoves} onChange={(e) => setLogMoves(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px] w-20 tabular-nums" />
+          </label>
+          <label className="flex flex-col gap-1 flex-1 min-w-[140px]">
+            <span className="text-[10.5px] font-bold text-[#5C6B80] uppercase">Note (optional)</span>
+            <input value={logNote} onChange={(e) => setLogNote(e.target.value)} placeholder="e.g. yard 2 stacking" className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[12.5px]" />
+          </label>
+          <button
+            onClick={() => {
+              if (!logEquip || !logOp) return;
+              dispatch({
+                type: "logEquipmentUsage", equipmentId: logEquip, operatorId: logOp, date: today,
+                hours: parseFloat(logHours) || 0, moves: parseInt(logMoves, 10) || 0, note: logNote.trim() || undefined,
+                enteredBy: "Console user",
+              });
+              setLogHours(""); setLogMoves(""); setLogNote("");
+            }}
+            className="bg-[#1F3864] text-white text-[12.5px] font-bold rounded-md px-4 py-2"
+          >+ Log entry</button>
+        </div>
+        <table className="w-full text-[12px] min-w-[560px]">
+          <thead><tr><Th>Date</Th><Th>Equipment</Th><Th>Operator</Th><Th>Hours</Th><Th>Moves</Th><Th>Note</Th></tr></thead>
+          <tbody>
+            {state.equipmentLogs.slice(0, 12).map((l) => (
+              <tr key={l.id}>
+                <Td className="font-mono text-[11px]">{l.date}</Td>
+                <Td className="font-mono font-bold">{l.equipmentId}</Td>
+                <Td>{state.operators.find((o) => o.id === l.operatorId)?.name ?? "—"}</Td>
+                <Td className="tabular-nums">{l.hours}</Td>
+                <Td className="tabular-nums">{l.moves}</Td>
+                <Td className="text-[#5C6B80] text-[11px]">{l.note ?? ""}</Td>
+              </tr>
+            ))}
+            {state.equipmentLogs.length === 0 && (
+              <tr><Td className="text-[#5C6B80]" >No entries yet — log the first shift&apos;s hours above.</Td><Td>{""}</Td><Td>{""}</Td><Td>{""}</Td><Td>{""}</Td><Td>{""}</Td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 The app is deployment-ready and backend-agnostic (see ../backend-architecture.md). When the Supabase project is assigned:
 
-1. **Database:** run `db/migrations/001_init.sql` on the assigned Supabase project (SQL editor or `psql`). Plain PostgreSQL — the same file works on AWS RDS later.
+1. **Database:** run `db/migrations/001_init.sql` then `002_equipment.sql`, in order, on the assigned Supabase project (SQL editor or `psql`). Plain PostgreSQL — the same files work on AWS RDS later. New features get new numbered migration files; never edit an already-applied one.
 2. **Env:** copy `.env.local.example` → set on the host (Vercel env vars or `.env.local`):
    - `NEXT_PUBLIC_BACKEND=supabase`
    - `NEXT_PUBLIC_SUPABASE_URL=` (from the assigned project)

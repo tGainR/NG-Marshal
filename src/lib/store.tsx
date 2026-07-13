@@ -3,9 +3,9 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from "react";
 import { getDataStore } from "./data";
 import type { DataStore } from "./data/DataStore";
-import { Assignment, Driver, Issue, MovementType, Offer, RateCard, Trip, Vehicle, Vendor, Verification } from "./types";
+import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, RateCard, Trip, Vehicle, Vendor, Verification } from "./types";
 import {
-  DRIVERS, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, RATE_CARD, SEED_ISSUES,
+  DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, RATE_CARD, SEED_ISSUES,
   SEED_TRIPS, SHIFT, SITE, VEHICLES,
 } from "./seed";
 import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
@@ -20,6 +20,10 @@ export interface AppState {
   assignments: Record<string, Assignment>; // vehicleId → planner assignment
   pool: ImportedContainer[]; // imported container pool (pendency/cutoff files)
   vendors: Vendor[]; // vendor master (incl. "own" for directly-employed)
+  equipment: Equipment[]; // yard equipment master (reach stackers, forklifts, ECH...)
+  operators: Operator[]; // equipment operator master
+  equipmentLogs: EquipmentLog[]; // daily hours/moves entries, operator-wise
+  nextLogId: number;
   rateCard: RateCard; // editable settings — drives ALL incentive math
   milestoneTeu: number; // celebration threshold, editable
   offer: Offer | null;
@@ -54,6 +58,10 @@ type Action =
   | { type: "addDriver"; name: string; phone: string; vendor: string; note?: string }
   | { type: "mapDriver"; vehicleId: string; driverId: string | null }
   | { type: "updateSettings"; rateCard: RateCard; milestoneTeu: number }
+  | { type: "addEquipment"; id: string; equipType: Equipment["type"]; reg: string; vendor: string }
+  | { type: "addOperator"; name: string; phone: string; vendor: string }
+  | { type: "mapOperator"; equipmentId: string; operatorId: string | null }
+  | { type: "logEquipmentUsage"; equipmentId: string; operatorId: string; date: string; hours: number; moves: number; note?: string; enteredBy: string }
   | { type: "hydrate"; state: Partial<AppState>; quiet?: boolean }
   | { type: "resetDemo" }
   | { type: "clearCelebration" }
@@ -564,8 +572,70 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, rateCard, milestoneTeu: a.milestoneTeu, issues: [issue, ...s.issues], nextIssueId: s.nextIssueId + 1, toast: `Rate card ${rateCard.version} live` };
     }
 
+    case "addEquipment": {
+      if (!a.id.trim()) return s;
+      const equipment: Equipment[] = [
+        ...s.equipment,
+        { id: a.id.trim(), type: a.equipType, reg: a.reg.trim() || undefined, vendor: a.vendor, status: "offline", zone: "Parking", tags: [] },
+      ];
+      return { ...s, equipment, toast: `Equipment added: ${a.id.trim()}` };
+    }
+
+    case "addOperator": {
+      if (!a.name.trim()) return s;
+      const id = "op-" + a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const operators: Operator[] = [...s.operators, { id, name: a.name.trim(), phone: a.phone.trim(), vendor: a.vendor, onDuty: false }];
+      return { ...s, operators, toast: `Operator added: ${a.name.trim()}` };
+    }
+
+    case "mapOperator": {
+      // one operator ↔ one equipment (default), editable any day; audited as manual entry
+      const equipment = s.equipment.map((e) => {
+        if (e.id === a.equipmentId) return { ...e, operatorId: a.operatorId ?? undefined };
+        if (a.operatorId && e.operatorId === a.operatorId) return { ...e, operatorId: undefined }; // operator moves equipment
+        return e;
+      });
+      const op = s.operators.find((o) => o.id === a.operatorId);
+      const issue: Issue = {
+        id: s.nextIssueId,
+        type: "manual_entry",
+        status: "resolved",
+        raisedBy: "Planner · console",
+        owner: "Shift Incharge",
+        vehicleId: a.equipmentId,
+        detail: `Operator mapping: ${a.equipmentId} → ${op ? op.name : "unassigned"} · audited`,
+        openedAt: s.now,
+        slaMin: 0,
+      };
+      return { ...s, equipment, issues: [issue, ...s.issues], nextIssueId: s.nextIssueId + 1, toast: `${a.equipmentId} ↔ ${op ? op.name : "—"}` };
+    }
+
+    case "logEquipmentUsage": {
+      if (a.hours <= 0 && a.moves <= 0) return s;
+      const log: EquipmentLog = {
+        id: s.nextLogId,
+        equipmentId: a.equipmentId,
+        operatorId: a.operatorId,
+        date: a.date,
+        hours: a.hours,
+        moves: a.moves,
+        note: a.note,
+        enteredBy: a.enteredBy,
+        enteredAt: s.now,
+      };
+      return { ...s, equipmentLogs: [log, ...s.equipmentLogs], nextLogId: s.nextLogId + 1, toast: `Logged ${a.hours}h / ${a.moves} moves · ${a.equipmentId}` };
+    }
+
     case "hydrate":
-      return { ...s, ...a.state, pool: a.state.pool ?? s.pool ?? [], toast: a.quiet ? s.toast : "Session restored ✓" };
+      return {
+        ...s,
+        ...a.state,
+        pool: a.state.pool ?? s.pool ?? [],
+        equipment: a.state.equipment ?? s.equipment ?? [],
+        operators: a.state.operators ?? s.operators ?? [],
+        equipmentLogs: a.state.equipmentLogs ?? s.equipmentLogs ?? [],
+        toast: a.quiet ? s.toast : "Session restored ✓",
+      };
 
     case "resetDemo":
       return { ...initial, toast: "Demo reset" };
@@ -592,6 +662,10 @@ const initial: AppState = {
     { id: "active", name: "Active", type: "vendor" },
     { id: "own", name: "Own (direct employment)", type: "own" },
   ],
+  equipment: EQUIPMENT,
+  operators: OPERATORS,
+  equipmentLogs: [],
+  nextLogId: 1,
   rateCard: RATE_CARD,
   milestoneTeu: SITE.perItvTeuTarget,
   assignments: {
@@ -615,6 +689,7 @@ const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } 
 const PERSIST_KEYS = [
   "drivers", "vehicles", "trips", "issues", "assignments", "pool",
   "vendors", "rateCard", "milestoneTeu",
+  "equipment", "operators", "equipmentLogs", "nextLogId",
   "nextTripId", "nextIssueId", "passesThisShift", "milestoneHit",
 ] as const;
 type Persistable = Pick<AppState, (typeof PERSIST_KEYS)[number]>;

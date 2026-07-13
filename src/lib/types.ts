@@ -38,7 +38,8 @@ export type IssueType =
 
 export type IssueStatus = "open" | "acknowledged" | "escalated" | "resolved";
 
-export type Role = "driver" | "supervisor" | "manager" | "docs";
+// Roles the product is designed around (driver / supervisor / manager / docs).
+// No auth/RBAC wired yet — see TEAM-HANDOFF.md "Auth & roles" for what to build.
 
 export interface Site {
   id: string;
@@ -146,6 +147,64 @@ export interface HotJob {
   boost: number;
   done: number;
   total: number;
+}
+
+// ── Equipment (non-ITV yard equipment) ──────────────────────────────────
+// Broader than ITVs: reach stackers, forklifts, empty container handlers.
+// No GPS/trip state machine yet — tracked by manual daily hours/moves log,
+// operator-wise. Same masters pattern as ITV/driver (add, map, edit any day).
+
+export type EquipmentType =
+  | "reach_stacker"
+  | "forklift_3t"
+  | "forklift_5t"
+  | "ech" // empty container handler
+  | "forklift_side_shifter"; // ECH variant with side-shifter attachment
+
+export const EQUIPMENT_TYPE_LABEL: Record<EquipmentType, string> = {
+  reach_stacker: "Reach Stacker",
+  forklift_3t: "Forklift · 3T",
+  forklift_5t: "Forklift · 5T",
+  ech: "Empty Container Handler",
+  forklift_side_shifter: "Forklift · Side Shifter",
+};
+
+export type EquipmentStatus = "running" | "standby" | "breakdown" | "no_operator" | "offline";
+
+export interface Operator {
+  id: string;
+  name: string;
+  phone: string;
+  vendor: string;
+  onDuty: boolean;
+  note?: string;
+}
+
+export interface Equipment {
+  id: string; // asset tag, e.g. RS-04, FL3T-02
+  type: EquipmentType;
+  reg?: string; // registration / internal asset no
+  vendor: string;
+  status: EquipmentStatus;
+  statusNote?: string;
+  operatorId?: string;
+  zone: string;
+  tags: string[]; // e.g. "yard-2", "reefer-rated"
+}
+
+// Manual daily entry — hours run + moves, per equipment per operator.
+// This is the equipment-side equivalent of a verified ITV trip: the record
+// of truth until real telematics/hour-meter integration exists.
+export interface EquipmentLog {
+  id: number;
+  equipmentId: string;
+  operatorId: string;
+  date: string; // yyyy-mm-dd
+  hours: number;
+  moves: number;
+  note?: string;
+  enteredBy: string;
+  enteredAt: number;
 }
 
 export interface Offer {
