@@ -285,25 +285,45 @@ Current Pendency:${pendencyNow}
         {/* LIVE BOARD */}
         {tab === "live" && (
           <div className="mt-4 flex flex-col gap-5">
-          {/* Deployment by destination — terminals + FTWZ */}
+          {/* Deployment — locations first (with direction split), movements separately */}
           <div className="bg-white border border-[#D8DEE7] rounded-xl p-4">
-            <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">Deployment by destination</p>
+            <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">
+              Deployment by location <span className="font-medium normal-case tracking-normal">· import / export split within each</span>
+            </p>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
               {site.destinations.map((dest) => {
-                const deployed = Object.values(state.assignments).filter((a) =>
+                const at = Object.values(state.assignments).filter((a) =>
                   dest.kind === "ftwz" ? a.purpose === "ftwz" || a.target === dest.id : a.target === dest.id
-                ).length;
+                );
+                const imp = at.filter((a) => a.purpose === "import").length;
+                const exp = at.filter((a) => a.purpose === "export").length;
                 return (
                   <div key={dest.id} className={`rounded-lg px-3 py-2.5 border ${dest.kind === "ftwz" ? "border-[#E8641B]/40 bg-[#FFF7F1]" : "border-[#D8DEE7]"}`}>
                     <div className="flex items-center justify-between">
                       <span className="font-mono font-bold text-[13px]">{dest.label}</span>
                       {dest.kind === "ftwz" && <span className="text-[8.5px] font-bold tracking-wide text-[#E8641B] uppercase">new</span>}
                     </div>
-                    <p className="text-[22px] font-extrabold tabular-nums leading-tight">{deployed}<span className="text-[10px] font-semibold text-[#5C6B80] ml-1">ITV</span></p>
-                    <p className="text-[10px] text-[#5C6B80]">{dest.kind === "terminal" ? "terminal" : dest.kind === "ftwz" ? "FTW zone" : "company"}</p>
+                    <p className="text-[22px] font-extrabold tabular-nums leading-tight">{at.length}<span className="text-[10px] font-semibold text-[#5C6B80] ml-1">ITV</span></p>
+                    <p className="text-[10px] text-[#5C6B80] font-mono">
+                      {dest.kind === "ftwz" ? "FTW zone" : `${imp} imp · ${exp} exp`}
+                    </p>
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-3.5 pt-3 border-t border-[#EDF0F5]">
+              <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-2">Movements <span className="font-medium normal-case tracking-normal">· run across terminals</span></p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                {([["scanning", "Scanning"], ["check_package", "Check package"]] as const).map(([purpose, label]) => (
+                  <div key={purpose} className="rounded-lg px-3 py-2.5 border border-[#D8DEE7]">
+                    <span className="font-bold text-[12.5px]">{label}</span>
+                    <p className="text-[22px] font-extrabold tabular-nums leading-tight">
+                      {Object.values(state.assignments).filter((a) => a.purpose === purpose).length}
+                      <span className="text-[10px] font-semibold text-[#5C6B80] ml-1">ITV</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
           <div className="grid lg:grid-cols-[1.6fr_1fr] gap-5">
@@ -394,53 +414,7 @@ Current Pendency:${pendencyNow}
             <span className="bg-[#E8641B] text-white text-[13px] font-bold px-4 py-2 rounded-lg whitespace-nowrap">Choose file →</span>
           </label>
         )}
-        {tab === "planning" && (
-          <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Pendency vs ITVs deployed</p>
-              <span className="text-[10.5px] text-[#5C6B80]">Red = pending with no ITV assigned</span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
-              {[...site.destinations.map((d) => d.id), "SCAN", "EXPORT"].map((term) => {
-                const dest = site.destinations.find((d) => d.id === term);
-                const imports = state.pool.filter((c) => (c.direction ?? "import") === "import");
-                const rows = term === "SCAN" ? imports.filter((c) => c.scan)
-                  : term === "EXPORT" ? state.pool.filter((c) => c.direction === "export")
-                  : dest?.kind === "ftwz" ? []
-                  : imports.filter((c) => c.terminal === term && !c.scan);
-                const teus = rows.reduce((a, c) => a + c.teu, 0);
-                const oldest = rows.reduce((a, c) => Math.max(a, c.pendencyHrs ?? 0), 0);
-                const odc = rows.filter((c) => c.category === "ODC").length;
-                const assigned = Object.entries(state.assignments).filter(([, a]) =>
-                  term === "SCAN" ? a.purpose === "scanning"
-                  : term === "EXPORT" ? a.purpose === "export"
-                  : dest?.kind === "ftwz" ? (a.purpose === "ftwz" || a.target === term)
-                  : a.target === term && a.purpose !== "export"
-                ).length;
-                const hot = teus > 0 && assigned === 0;
-                const isFtwz = dest?.kind === "ftwz";
-                return (
-                  <div key={term} className={`border rounded-lg px-3 py-2.5 ${hot ? "border-[#D64545] bg-[#FDF6F6]" : isFtwz ? "border-[#E8641B]/40 bg-[#FFF7F1]" : "border-[#D8DEE7]"}`}>
-                    <div className="flex justify-between items-baseline">
-                      <span className="font-mono font-bold text-[13px]">{term}</span>
-                      <span className={`text-[10px] font-bold ${hot ? "text-[#A83232]" : "text-[#177A47]"}`}>{assigned} ITV</span>
-                    </div>
-                    {isFtwz ? (
-                      <p className="text-[18px] font-extrabold tabular-nums leading-tight text-[#5C6B80]">FTW<span className="text-[10px] font-semibold ml-1">zone</span></p>
-                    ) : (
-                      <>
-                        <p className="text-[18px] font-extrabold tabular-nums leading-tight">{teus} <span className="text-[10px] font-semibold text-[#5C6B80]">TEU</span></p>
-                        <p className="text-[10px] text-[#5C6B80] font-mono">
-                          {rows.length} ctr{oldest > 0 && ` · ${Math.round(oldest / 24)}d`}{odc > 0 && ` · ${odc} ODC`}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {tab === "planning" && <PendencyPanel site={site} />}
         {/* QUICK ALLOCATE + AUTO-PLAN */}
         {tab === "planning" && <QuickAllocateBar />}
         {tab === "planning" && state.proposal && <ProposalPanel />}
@@ -1253,6 +1227,129 @@ function ProposalPanel() {
           {p.gaps.map((g) => <p key={g} className="text-[11.5px] text-[#8A6100]">· {g}</p>)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Pendency, structured properly ────────────────────────────────────────
+// Locations (MICT/T2/CT…) and directions (import/export) are DIFFERENT dimensions
+// and must never sit at the same level. Hierarchy here:
+//   Total pendency → split by direction → then location-wise within that direction.
+// Scanning / check-package are MOVEMENTS, not locations — shown separately below.
+function PendencyPanel({ site }: { site: import("@/lib/types").Site }) {
+  const { state } = useApp();
+  const [dir, setDir] = useState<"import" | "export">("import");
+
+  const imports = state.pool.filter((c) => (c.direction ?? "import") === "import");
+  const exports_ = state.pool.filter((c) => c.direction === "export");
+  const teuOf = (rows: typeof state.pool) => rows.reduce((a, c) => a + c.teu, 0);
+
+  const impTeu = teuOf(imports);
+  const expTeu = teuOf(exports_);
+  const scanRows = imports.filter((c) => c.scan);
+  const scanTeu = teuOf(scanRows);
+  const totalTeu = impTeu + expTeu;
+
+  const rowsFor = (dest: { id: string; kind: string }) => {
+    if (dest.kind === "ftwz") return [];
+    return dir === "import"
+      ? imports.filter((c) => c.terminal === dest.id && !c.scan)
+      : exports_.filter((c) => c.terminal === dest.id);
+  };
+  const itvsAt = (dest: { id: string; kind: string }) =>
+    Object.values(state.assignments).filter((a) =>
+      dest.kind === "ftwz" ? a.purpose === "ftwz" || a.target === dest.id : a.target === dest.id && a.purpose === dir
+    ).length;
+
+  const movementItvs = (purpose: string) => Object.values(state.assignments).filter((a) => a.purpose === purpose).length;
+
+  const Chip = ({ on, onClick, label, value }: { on: boolean; onClick: () => void; label: string; value: string }) => (
+    <button
+      onClick={onClick}
+      className={`px-3.5 py-2 rounded-lg border text-left transition-colors ${
+        on ? "bg-[#1F3864] border-[#1F3864] text-white" : "bg-white border-[#D8DEE7] text-[#16243A] hover:border-[#1F3864]"
+      }`}
+    >
+      <span className={`block text-[9.5px] font-bold tracking-[0.1em] uppercase ${on ? "text-[#B9C6DE]" : "text-[#5C6B80]"}`}>{label}</span>
+      <span className="block text-[17px] font-extrabold tabular-nums leading-tight">{value}</span>
+    </button>
+  );
+
+  return (
+    <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4">
+      {/* Level 1 — total, then direction */}
+      <div className="flex flex-wrap items-center gap-2.5 mb-4">
+        <div className="pr-3.5 mr-1 border-r border-[#D8DEE7]">
+          <p className="text-[9.5px] font-bold tracking-[0.1em] uppercase text-[#5C6B80]">Total pendency</p>
+          <p className="text-[26px] font-extrabold tabular-nums leading-tight">
+            {totalTeu.toLocaleString("en-IN")} <span className="text-[11px] font-semibold text-[#5C6B80]">TEU</span>
+          </p>
+        </div>
+        <Chip on={dir === "import"} onClick={() => setDir("import")} label="Import" value={`${impTeu.toLocaleString("en-IN")} TEU`} />
+        <Chip on={dir === "export"} onClick={() => setDir("export")} label="Export" value={`${expTeu.toLocaleString("en-IN")} TEU`} />
+        <span className="text-[11px] text-[#5C6B80] ml-1">
+          {dir === "import" ? `${imports.length} containers` : `${exports_.length} containers`} · click to switch view
+        </span>
+      </div>
+
+      {/* Level 2 — location-wise, WITHIN the chosen direction */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">
+          {dir === "import" ? "Import" : "Export"} pendency by location
+        </p>
+        <span className="text-[10.5px] text-[#5C6B80]">Red = pending with no ITV on this movement</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        {site.destinations.map((dest) => {
+          const rows = rowsFor(dest);
+          const teus = teuOf(rows);
+          const oldest = rows.reduce((a, c) => Math.max(a, c.pendencyHrs ?? 0), 0);
+          const odc = rows.filter((c) => c.category === "ODC").length;
+          const itvs = itvsAt(dest);
+          const isFtwz = dest.kind === "ftwz";
+          const hot = teus > 0 && itvs === 0;
+          return (
+            <div key={dest.id} className={`border rounded-lg px-3 py-2.5 ${hot ? "border-[#D64545] bg-[#FDF6F6]" : isFtwz ? "border-[#E8641B]/40 bg-[#FFF7F1]" : "border-[#D8DEE7]"}`}>
+              <div className="flex justify-between items-baseline">
+                <span className="font-mono font-bold text-[13px]">{dest.label}</span>
+                <span className={`text-[10px] font-bold ${hot ? "text-[#A83232]" : "text-[#177A47]"}`}>{itvs} ITV</span>
+              </div>
+              {isFtwz ? (
+                <p className="text-[11px] text-[#5C6B80] mt-1">No pendency feed<br />deployment only</p>
+              ) : (
+                <>
+                  <p className="text-[18px] font-extrabold tabular-nums leading-tight">{teus} <span className="text-[10px] font-semibold text-[#5C6B80]">TEU</span></p>
+                  <p className="text-[10px] text-[#5C6B80] font-mono">
+                    {rows.length} ctr{oldest > 0 && ` · ${Math.round(oldest / 24)}d`}{odc > 0 && ` · ${odc} ODC`}
+                  </p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Movements — NOT locations, so they live on their own level */}
+      <div className="mt-4 pt-3.5 border-t border-[#EDF0F5]">
+        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-2">Movements <span className="font-medium normal-case tracking-normal">· not locations — these run across terminals</span></p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+          <div className="border border-[#D8DEE7] rounded-lg px-3 py-2.5">
+            <div className="flex justify-between items-baseline">
+              <span className="font-bold text-[12.5px]">Scanning</span>
+              <span className="text-[10px] font-bold text-[#177A47]">{movementItvs("scanning")} ITV</span>
+            </div>
+            <p className="text-[18px] font-extrabold tabular-nums leading-tight">{scanTeu} <span className="text-[10px] font-semibold text-[#5C6B80]">TEU</span></p>
+            <p className="text-[10px] text-[#5C6B80] font-mono">{scanRows.length} ctr · a slice of import</p>
+          </div>
+          <div className="border border-[#D8DEE7] rounded-lg px-3 py-2.5">
+            <div className="flex justify-between items-baseline">
+              <span className="font-bold text-[12.5px]">Check package</span>
+              <span className="text-[10px] font-bold text-[#177A47]">{movementItvs("check_package")} ITV</span>
+            </div>
+            <p className="text-[11px] text-[#5C6B80] mt-1">No pendency feed<br />deployment only</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
