@@ -1,4 +1,4 @@
-import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator } from "./types";
+import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator, PlanRules } from "./types";
 
 // ——— Mundra EXIM yard site profile ———
 // Destinations = the 4 container terminals + FTWZ (Free Trade Warehousing Zone, now live).
@@ -26,6 +26,32 @@ export const SITE: Site = {
 // All projects/sites the operator runs. Scalable — add sites here or via the console.
 export const SITES: Site[] = [SITE];
 
+// ——— Planning rules (editable in the console; versioned + audited like the rate card) ———
+export const PLAN_RULES: PlanRules = {
+  version: "v1",
+  effectiveFrom: "2026-07-13",
+  lanes: [
+    { id: "MICT|import", target: "MICT", purpose: "import", label: "MICT · Import", min: 5, max: 20, weight: 1.2, enabled: true },
+    { id: "T2|import", target: "T2", purpose: "import", label: "T2 · Import", min: 5, max: 30, weight: 1, enabled: true },
+    { id: "CT2|import", target: "CT2", purpose: "import", label: "CT2 · Import", min: 5, max: 30, weight: 1, enabled: true },
+    { id: "CT3|import", target: "CT3", purpose: "import", label: "CT3 · Import", min: 10, max: 40, weight: 1.5, enabled: true },
+    { id: "CT4|import", target: "CT4", purpose: "import", label: "CT4 · Import", min: 5, max: 25, weight: 1, enabled: true },
+    { id: "T2|export", target: "T2", purpose: "export", pickup: "EXIM-1", label: "T2 · Export", min: 4, max: 25, weight: 1, enabled: true },
+    { id: "CT4|export", target: "CT4", purpose: "export", pickup: "EXIM-1", label: "CT4 · Export", min: 4, max: 25, weight: 1, enabled: true },
+    { id: "FTWZ|ftwz", target: "FTWZ", purpose: "ftwz", label: "FTWZ", min: 2, max: 10, weight: 1, enabled: true },
+    { id: "SCAN|scanning", target: "SCAN", purpose: "scanning", label: "Scanning", min: 10, max: 15, weight: 1, enabled: true },
+    { id: "CP|check_package", target: "CP", purpose: "check_package", label: "Check package", min: 2, max: 6, weight: 1, enabled: true },
+  ],
+  vendors: [
+    { vendor: "Active", maxSupply: 70, allowed: [] },
+    { vendor: "Own", maxSupply: 10, allowed: [] },
+  ],
+  balanceVendors: true,
+  tripEquity: true,
+  minimiseChurn: true,
+  respectPreferences: true,
+};
+
 export const RATE_CARD: RateCard = {
   version: "v1 · pilot",
   effectiveFrom: "2026-07-01",
@@ -52,12 +78,12 @@ export const DRIVERS: Driver[] = [
 export const VEHICLES: Vehicle[] = [
   { id: "A333", tags: [], reg: "GJ12AU8670", vendor: "Active", status: "offline", statusSince: 0, driverId: undefined, zone: "Parking" },
   { id: "A157", tags: [], reg: "GJ39T7157", vendor: "Active", status: "standby", statusSince: -7800, statusNote: "CT3 gate · no location parchi", driverId: "d-sohan", zone: "CT3 gate" },
-  { id: "A670", tags: ["high-capacity"], reg: "GJ39T7670", vendor: "Active", status: "breakdown", statusSince: -5400, statusNote: "Workshop · clutch, ETA 16:00", driverId: "d-imran", zone: "Workshop" },
+  { id: "A670", tags: ["high-capacity"], preferFor: ["scanning"], reg: "GJ39T7670", vendor: "Active", status: "breakdown", statusSince: -5400, statusNote: "Workshop · clutch, ETA 16:00", driverId: "d-imran", zone: "Workshop" },
   { id: "7118", tags: [], reg: "GJ39T7118", vendor: "Active", status: "diesel", statusSince: -900, statusNote: "Bowser point · #3 in line", driverId: "d-kishan", zone: "Bowser" },
-  { id: "A408", tags: ["high-capacity"], reg: "GJ39T7408", vendor: "Active", status: "running", statusSince: -1100, statusNote: "T2 export · in-terminal", driverId: "d-bharat", zone: "T2" },
+  { id: "A408", tags: ["high-capacity"], preferFor: ["export"], reg: "GJ39T7408", vendor: "Active", status: "running", statusSince: -1100, statusNote: "T2 export · in-terminal", driverId: "d-bharat", zone: "T2" },
   { id: "A144", tags: [], reg: "GJ39T7144", vendor: "Active", status: "no_driver", statusSince: -14000, statusNote: "Parking · driver not reported", driverId: undefined, zone: "Parking" },
   { id: "A142", tags: [], reg: "GJ39T7142", vendor: "Active", status: "running", statusSince: -600, statusNote: "CT3 import · returning", driverId: "d-nasim", zone: "En route" },
-  { id: "A198", tags: ["scanning-only", "high-capacity"], reg: "GJ39T7198", vendor: "Active", status: "running", statusSince: -300, statusNote: "Scanning movement", driverId: "d-vijay", zone: "Scan yard" },
+  { id: "A198", tags: ["high-capacity"], restrictTo: ["scanning"], reg: "GJ39T7198", vendor: "Active", status: "running", statusSince: -300, statusNote: "Scanning movement", driverId: "d-vijay", zone: "Scan yard" },
   { id: "A225", tags: [], reg: "GJ39T7225", vendor: "Active", status: "running", statusSince: -2400, statusNote: "CT4 import · at gate", driverId: "d-arjun", zone: "CT4 gate" },
 ];
 

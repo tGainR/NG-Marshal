@@ -3,11 +3,12 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from "react";
 import { getDataStore } from "./data";
 import type { DataStore } from "./data/DataStore";
-import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, RateCard, Site, Trip, Vehicle, Vendor, Verification } from "./types";
+import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, Trip, Vehicle, Vendor, Verification } from "./types";
 import {
-  DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, RATE_CARD, SEED_ISSUES,
+  DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, PLAN_RULES, RATE_CARD, SEED_ISSUES,
   SEED_TRIPS, SHIFT, SITE, SITES, VEHICLES,
 } from "./seed";
+import { buildPlan, pickForQuickAllocate } from "./planner";
 import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
 import { ImportedContainer, ImportedDriver, ImportedVehicle } from "./importer";
 
@@ -21,6 +22,8 @@ export interface AppState {
   pool: ImportedContainer[]; // imported container pool (pendency/cutoff files)
   sites: Site[]; // projects/sites the operator runs
   activeSiteId: string; // currently-selected site
+  planRules: PlanRules; // allocation rules — editable in console, versioned
+  proposal: PlanProposal | null; // auto-plan suggestion awaiting review
   vendors: Vendor[]; // vendor master (incl. "own" for directly-employed)
   equipment: Equipment[]; // yard equipment master (reach stackers, forklifts, ECH...)
   operators: Operator[]; // equipment operator master
@@ -61,6 +64,12 @@ type Action =
   | { type: "mapDriver"; vehicleId: string; driverId: string | null }
   | { type: "updateSettings"; rateCard: RateCard; milestoneTeu: number }
   | { type: "setActiveSite"; siteId: string }
+  | { type: "quickAllocate"; vendor: string; count: number; target: string; purpose: MovementType; pickup?: string }
+  | { type: "setVehiclePrefs"; vehicleId: string; restrictTo?: MovementType[]; preferFor?: MovementType[] }
+  | { type: "suggestPlan" }
+  | { type: "applyProposal" }
+  | { type: "discardProposal" }
+  | { type: "updatePlanRules"; rules: PlanRules }
   | { type: "addSite"; site: Site }
   | { type: "addEquipment"; id: string; equipType: Equipment["type"]; reg: string; vendor: string }
   | { type: "addOperator"; name: string; phone: string; vendor: string }
@@ -630,6 +639,104 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, equipmentLogs: [log, ...s.equipmentLogs], nextLogId: s.nextLogId + 1, toast: `Logged ${a.hours}h / ${a.moves} moves · ${a.equipmentId}` };
     }
 
+    case "quickAllocate": {
+      const { picked, skipped } = pickForQuickAllocate({
+        vehicles: s.vehicles,
+        assignments: s.assignments,
+        trips: s.trips,
+        vendor: a.vendor,
+        count: a.count,
+        lane: { target: a.target, purpose: a.purpose },
+        driverNoteFor: (id) => s.drivers.find((d) => d.id === s.vehicles.find((v) => v.id === id)?.driverId)?.note,
+        vehicleBusy: (id) => s.trips.some((t) => t.vehicleId === id && !["completed", "aborted", "abandoned"].includes(t.state)),
+      });
+      if (picked.length === 0) return { ...s, toast: `No eligible ITV free from ${a.vendor}` };
+      const assignments = { ...s.assignments };
+      picked.forEach((id) => (assignments[id] = { target: a.target, purpose: a.purpose, pickup: a.pickup }));
+      const issue: Issue = {
+        id: s.nextIssueId,
+        type: "plan_change",
+        status: "resolved",
+        raisedBy: "Planner · quick allocate",
+        owner: "Shift Incharge",
+        detail: `Quick allocate: ${picked.length} × ${a.vendor} → ${a.target} (${a.purpose.replace("_", " ")}) · ${picked.join(", ")}`,
+        openedAt: s.now,
+        slaMin: 0,
+      };
+      return {
+        ...s,
+        assignments,
+        issues: [issue, ...s.issues],
+        nextIssueId: s.nextIssueId + 1,
+        offer: picked.includes(ME_VEHICLE_ID) ? null : s.offer,
+        toast: `${picked.length} ITV → ${a.target}${skipped ? ` · ${skipped}` : ""}`,
+      };
+    }
+
+    case "setVehiclePrefs":
+      return {
+        ...s,
+        vehicles: s.vehicles.map((v) => (v.id === a.vehicleId ? { ...v, restrictTo: a.restrictTo, preferFor: a.preferFor } : v)),
+        toast: `${a.vehicleId} preferences saved`,
+      };
+
+    case "suggestPlan": {
+      const proposal = buildPlan({
+        vehicles: s.vehicles,
+        assignments: s.assignments,
+        pool: s.pool,
+        trips: s.trips,
+        rules: s.planRules,
+        driverNoteFor: (id) => s.drivers.find((d) => d.id === s.vehicles.find((v) => v.id === id)?.driverId)?.note,
+        vehicleBusy: (id) => s.trips.some((t) => t.vehicleId === id && !["completed", "aborted", "abandoned"].includes(t.state)),
+      });
+      return { ...s, proposal, toast: proposal.changes.length ? `Plan ready: ${proposal.changes.length} changes` : "Already optimal — no changes" };
+    }
+
+    case "applyProposal": {
+      if (!s.proposal) return s;
+      const assignments = { ...s.assignments };
+      s.proposal.changes.forEach((c) => (assignments[c.vehicleId] = c.to));
+      const issue: Issue = {
+        id: s.nextIssueId,
+        type: "plan_change",
+        status: "resolved",
+        raisedBy: "Planner · auto-plan",
+        owner: "Shift Incharge",
+        detail: `Auto-plan applied (rules ${s.planRules.version}): ${s.proposal.changes.length} ITVs reassigned · audited`,
+        openedAt: s.now,
+        slaMin: 0,
+      };
+      return {
+        ...s,
+        assignments,
+        proposal: null,
+        issues: [issue, ...s.issues],
+        nextIssueId: s.nextIssueId + 1,
+        offer: s.proposal.changes.some((c) => c.vehicleId === ME_VEHICLE_ID) ? null : s.offer,
+        toast: `Auto-plan applied · ${s.proposal.changes.length} ITVs moved`,
+      };
+    }
+
+    case "discardProposal":
+      return { ...s, proposal: null };
+
+    case "updatePlanRules": {
+      const n = parseInt(s.planRules.version.replace(/[^0-9]/g, ""), 10) || 1;
+      const rules: PlanRules = { ...a.rules, version: `v${n + 1}`, effectiveFrom: new Date().toISOString().slice(0, 10) };
+      const issue: Issue = {
+        id: s.nextIssueId,
+        type: "manual_entry",
+        status: "resolved",
+        raisedBy: "Manager · console",
+        owner: "Manager",
+        detail: `Planning rules updated to ${rules.version} · audited`,
+        openedAt: s.now,
+        slaMin: 0,
+      };
+      return { ...s, planRules: rules, issues: [issue, ...s.issues], nextIssueId: s.nextIssueId + 1, toast: `Planning rules ${rules.version} live` };
+    }
+
     case "setActiveSite":
       return { ...s, activeSiteId: a.siteId, toast: `Switched to ${s.sites.find((x) => x.id === a.siteId)?.shortName ?? a.siteId}` };
 
@@ -644,6 +751,8 @@ function reducer(s: AppState, a: Action): AppState {
         ...a.state,
         sites: a.state.sites ?? s.sites,
         activeSiteId: a.state.activeSiteId ?? s.activeSiteId,
+        planRules: a.state.planRules ?? s.planRules,
+        proposal: null,
         pool: a.state.pool ?? s.pool ?? [],
         equipment: a.state.equipment ?? s.equipment ?? [],
         operators: a.state.operators ?? s.operators ?? [],
@@ -674,6 +783,8 @@ const initial: AppState = {
   pool: [],
   sites: SITES,
   activeSiteId: SITE.id,
+  planRules: PLAN_RULES,
+  proposal: null,
   vendors: [
     { id: "active", name: "Active", type: "vendor" },
     { id: "own", name: "Own (direct employment)", type: "own" },
@@ -704,7 +815,7 @@ const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } 
 // Persistable subset — sim-only fields (now, offer, toast, celebration, nextOfferIn) never sync.
 const PERSIST_KEYS = [
   "drivers", "vehicles", "trips", "issues", "assignments", "pool",
-  "vendors", "rateCard", "milestoneTeu", "sites", "activeSiteId",
+  "vendors", "rateCard", "milestoneTeu", "sites", "activeSiteId", "planRules",
   "equipment", "operators", "equipmentLogs", "nextLogId",
   "nextTripId", "nextIssueId", "passesThisShift", "milestoneHit",
 ] as const;

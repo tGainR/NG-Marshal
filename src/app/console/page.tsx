@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApp, RATE_CARD, SITE, SHIFT, HOT_JOBS } from "@/lib/store";
 import { DEPLOYMENT } from "@/lib/seed";
 import { fmtClock, fmtInr } from "@/lib/incentive";
-import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, VehicleStatus } from "@/lib/types";
+import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, MOVEMENT_LABEL, VehicleStatus } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
 
 type Tab = "live" | "planning" | "incentives" | "issues" | "masters" | "equipment";
@@ -441,6 +441,9 @@ Current Pendency:${pendencyNow}
             </div>
           </div>
         )}
+        {/* QUICK ALLOCATE + AUTO-PLAN */}
+        {tab === "planning" && <QuickAllocateBar />}
+        {tab === "planning" && state.proposal && <ProposalPanel />}
         {tab === "planning" && (
           <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4 overflow-x-auto">
             <div className="flex flex-wrap justify-between items-center gap-2 mb-1">
@@ -468,11 +471,21 @@ Current Pendency:${pendencyNow}
                       <Td>{drv ? drv.name.split(" ")[0] : "—"}</Td>
                       <Td><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${st.cls}`}>{st.label}</span></Td>
                       <Td className="text-[11px]">
+                        {v.restrictTo?.map((m) => (
+                          <span key={m} className="inline-block bg-[#FBE4E4] text-[#A83232] font-bold rounded px-1.5 py-0.5 mr-1" title="Hard restriction — may ONLY do this">
+                            🔒 {MOVEMENT_LABEL[m]} only
+                          </span>
+                        ))}
+                        {v.preferFor?.map((m) => (
+                          <span key={m} className="inline-block bg-[#E3F4EB] text-[#177A47] font-bold rounded px-1.5 py-0.5 mr-1" title="Preferred — send here first if possible">
+                            ★ {MOVEMENT_LABEL[m]} preferred
+                          </span>
+                        ))}
                         {v.tags.map((t) => (
                           <span key={t} className="inline-block bg-[#E8ECF6] text-[#3A54A0] font-bold rounded px-1.5 py-0.5 mr-1">{t}</span>
                         ))}
                         {drv?.note && <span className="text-[#8A6100]">✎ {drv.note}</span>}
-                        {v.tags.length === 0 && !drv?.note && <span className="text-[#5C6B80]">—</span>}
+                        {!v.restrictTo?.length && !v.preferFor?.length && v.tags.length === 0 && !drv?.note && <span className="text-[#5C6B80]">—</span>}
                       </Td>
                       <Td>
                         <select
@@ -1116,6 +1129,130 @@ function EquipmentTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ── Quick allocate: "10 ITVs from Active → CT4 (import)" in one action ──
+function QuickAllocateBar() {
+  const { state, dispatch } = useApp();
+  const lanes = state.planRules.lanes.filter((l) => l.enabled);
+  const vendorNames = ["ALL", ...state.vendors.map((v) => v.name)];
+  const [vendor, setVendor] = useState("ALL");
+  const [count, setCount] = useState("10");
+  const [laneKey, setLaneKey] = useState(lanes[0]?.id ?? "");
+
+  const lane = lanes.find((l) => l.id === laneKey);
+  const availableFromVendor = state.vehicles.filter(
+    (v) => (vendor === "ALL" || v.vendor.toLowerCase() === vendor.toLowerCase()) && !["breakdown", "no_driver"].includes(v.status)
+  ).length;
+
+  return (
+    <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4">
+      <div className="flex flex-wrap items-end gap-2.5">
+        <div>
+          <p className="text-[10px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-1.5">Quick allocate</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={vendor} onChange={(e) => setVendor(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[13px] font-semibold bg-white">
+              {vendorNames.map((v) => <option key={v} value={v}>{v === "ALL" ? "Any vendor" : v}</option>)}
+            </select>
+            <input
+              type="number" min={1} value={count} onChange={(e) => setCount(e.target.value)}
+              className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[13px] w-20 tabular-nums font-semibold"
+            />
+            <span className="text-[13px] text-[#5C6B80] font-semibold">ITVs →</span>
+            <select value={laneKey} onChange={(e) => setLaneKey(e.target.value)} className="border border-[#D8DEE7] rounded-md px-2.5 py-2 text-[13px] font-semibold bg-white min-w-[150px]">
+              {lanes.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>
+            <button
+              onClick={() => {
+                if (!lane) return;
+                dispatch({ type: "quickAllocate", vendor, count: parseInt(count, 10) || 1, target: lane.target, purpose: lane.purpose, pickup: lane.pickup });
+              }}
+              className="bg-[#1F3864] text-white text-[13px] font-bold rounded-md px-5 py-2"
+            >
+              Allocate
+            </button>
+          </div>
+          <p className="text-[11px] text-[#5C6B80] mt-1.5">
+            {availableFromVendor} available from {vendor === "ALL" ? "all vendors" : vendor} · skips breakdown / no-driver / mid-trip / ineligible
+          </p>
+        </div>
+        <div className="ml-auto">
+          <button
+            onClick={() => dispatch({ type: "suggestPlan" })}
+            className="bg-[#E8641B] text-white text-[13px] font-bold rounded-md px-5 py-2.5 flex items-center gap-2"
+          >
+            ⚡ Suggest plan
+          </button>
+          <p className="text-[10.5px] text-[#5C6B80] mt-1.5 text-right">rules {state.planRules.version} · you review before it applies</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Auto-plan proposal — always reviewed, never silently applied ──
+function ProposalPanel() {
+  const { state, dispatch } = useApp();
+  const p = state.proposal;
+  if (!p) return null;
+  return (
+    <div className="bg-white border-2 border-[#E8641B] rounded-xl p-4 mt-4">
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">
+          Proposed plan · {p.changes.length} change{p.changes.length === 1 ? "" : "s"} · rules {state.planRules.version}
+        </p>
+        <div className="flex gap-2">
+          <button onClick={() => dispatch({ type: "discardProposal" })} className="border border-[#D8DEE7] text-[#5C6B80] text-[12.5px] font-bold rounded-md px-3.5 py-1.5">Discard</button>
+          <button onClick={() => dispatch({ type: "applyProposal" })} className="bg-[#1E9E5A] text-white text-[12.5px] font-bold rounded-md px-4 py-1.5" disabled={p.changes.length === 0}>
+            Apply plan
+          </button>
+        </div>
+      </div>
+
+      {/* per-lane before → after */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+        {p.perLane.filter((l) => l.before !== l.after || l.demandTeu > 0).map((l) => (
+          <div key={l.laneId} className="border border-[#D8DEE7] rounded-lg px-2.5 py-2">
+            <p className="text-[10.5px] font-bold font-mono">{l.label}</p>
+            <p className="text-[15px] font-extrabold tabular-nums">
+              {l.before} <span className="text-[#5C6B80] text-[11px]">→</span> <span className={l.after > l.before ? "text-[#177A47]" : l.after < l.before ? "text-[#C0392B]" : ""}>{l.after}</span>
+              <span className="text-[10px] text-[#5C6B80] font-semibold ml-1">ITV</span>
+            </p>
+            <p className="text-[10px] text-[#5C6B80]">{l.demandTeu} TEU pending</p>
+          </div>
+        ))}
+      </div>
+
+      {/* changes */}
+      {p.changes.length > 0 && (
+        <div className="overflow-x-auto max-h-64 overflow-y-auto border border-[#EDF0F5] rounded-lg">
+          <table className="w-full text-[12px]">
+            <thead className="sticky top-0 bg-[#F6F8FB]">
+              <tr><Th>ITV</Th><Th>Vendor</Th><Th>From</Th><Th>To</Th><Th>Why</Th></tr>
+            </thead>
+            <tbody>
+              {p.changes.map((c) => (
+                <tr key={c.vehicleId}>
+                  <Td className="font-mono font-bold">{c.vehicleId}</Td>
+                  <Td>{c.vendor}</Td>
+                  <Td className="text-[#5C6B80]">{c.fromLabel ?? "— pool"}</Td>
+                  <Td className="font-semibold">{c.toLabel}</Td>
+                  <Td className="text-[11px] text-[#5C6B80]">{c.reason}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {p.gaps.length > 0 && (
+        <div className="mt-3 bg-[#FDFAF2] border border-[#F0DFAF] rounded-lg px-3.5 py-2.5">
+          <p className="text-[11px] font-bold text-[#8A6100] mb-1">Honest gaps</p>
+          {p.gaps.map((g) => <p key={g} className="text-[11.5px] text-[#8A6100]">· {g}</p>)}
+        </div>
+      )}
     </div>
   );
 }

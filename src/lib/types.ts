@@ -115,7 +115,10 @@ export interface Vehicle {
   statusNote?: string;
   driverId?: string;
   zone: string; // current zone label
-  tags: string[]; // eligibility, e.g. "scanning-only", "high-capacity"
+  tags: string[]; // free-form, e.g. "high-capacity"
+  // Allocation preferences — shown to the planner and honoured by auto-plan.
+  restrictTo?: MovementType[]; // HARD: this ITV may ONLY do these movements (e.g. scanning-only units)
+  preferFor?: MovementType[]; // SOFT: prefer these, but can be sent elsewhere if needed
 }
 
 export interface TripEarnings {
@@ -224,6 +227,54 @@ export interface EquipmentLog {
   note?: string;
   enteredBy: string;
   enteredAt: number;
+}
+
+// ── Planning engine ─────────────────────────────────────────────────────
+// A "lane" is one plannable stream: a destination + movement type.
+// Rules are edited in the console (versioned + audited, like the rate card) — never in code.
+
+export interface LaneRule {
+  id: string; // "CT3|import"
+  target: string; // CT3 / FTWZ / SCAN / CP
+  purpose: MovementType;
+  pickup?: string; // EXIM-1 / EXIM-2 for exports
+  label: string; // "CT3 · Import"
+  min: number; // never go below this many ITVs
+  max: number; // never exceed
+  weight: number; // demand multiplier (1 = normal, 1.5 = priority)
+  enabled: boolean;
+}
+
+export interface VendorRule {
+  vendor: string;
+  maxSupply: number; // most ITVs this vendor can field
+  allowed: string[]; // lane ids this vendor may serve; empty = all
+}
+
+export interface PlanRules {
+  version: string;
+  effectiveFrom: string;
+  lanes: LaneRule[];
+  vendors: VendorRule[];
+  balanceVendors: boolean; // no single vendor dominates a terminal
+  tripEquity: boolean; // fewer trips so far → first pick of high-yield lanes
+  minimiseChurn: boolean; // keep ITVs where they already are
+  respectPreferences: boolean; // honour preferFor (restrictTo is always honoured)
+}
+
+export interface PlanChange {
+  vehicleId: string;
+  vendor: string;
+  fromLabel?: string;
+  to: Assignment;
+  toLabel: string;
+  reason: string;
+}
+
+export interface PlanProposal {
+  changes: PlanChange[];
+  gaps: string[]; // honest shortfalls, e.g. "FTWZ short by 1 — no eligible ITV"
+  perLane: { laneId: string; label: string; before: number; after: number; demandTeu: number }[];
 }
 
 export interface Offer {
