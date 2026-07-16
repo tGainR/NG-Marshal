@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useApp, RATE_CARD, SITE, SHIFT, HOT_JOBS } from "@/lib/store";
 import { DEPLOYMENT } from "@/lib/seed";
 import { fmtClock, fmtInr } from "@/lib/incentive";
+import { parseSheetDateMs } from "@/lib/importer";
 import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, MOVEMENT_LABEL, VehicleStatus } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
 
-type Tab = "live" | "planning" | "incentives" | "issues" | "masters" | "equipment";
+type Tab = "live" | "summary" | "planning" | "incentives" | "issues" | "masters" | "equipment";
 
 const STATUS_STYLE: Record<VehicleStatus, { label: string; cls: string }> = {
   running: { label: "RUNNING", cls: "bg-[#E3F4EB] text-[#177A47]" },
@@ -60,7 +61,7 @@ export default function ConsolePage() {
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "planning" || t === "incentives" || t === "issues" || t === "masters" || t === "equipment") setTab(t);
+    if (t === "summary" || t === "planning" || t === "incentives" || t === "issues" || t === "masters" || t === "equipment") setTab(t);
   }, []);
 
   const site = state.sites.find((x) => x.id === state.activeSiteId) ?? SITE;
@@ -269,7 +270,7 @@ Current Pendency:${pendencyNow}
 
         {/* tabs */}
         <div className="flex gap-1.5 mt-5 flex-wrap">
-          {(["live", "planning", "incentives", "issues", "masters", "equipment"] as Tab[]).map((t) => (
+          {(["live", "summary", "planning", "incentives", "issues", "masters", "equipment"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -277,7 +278,7 @@ Current Pendency:${pendencyNow}
                 tab === t ? "bg-[#1F3864] text-white border-[#1F3864]" : "bg-white text-[#5C6B80] border-[#D8DEE7]"
               }`}
             >
-              {t === "live" ? "Live board" : t === "planning" ? "Planning & imports" : t === "incentives" ? "Incentive ledger" : t === "masters" ? "Masters & settings" : t === "equipment" ? "Equipment" : `Issues (${openIssues.length})`}
+              {t === "live" ? "Live board" : t === "summary" ? "Pendency summary" : t === "planning" ? "Planning & imports" : t === "incentives" ? "Incentive ledger" : t === "masters" ? "Masters & settings" : t === "equipment" ? "Equipment" : `Issues (${openIssues.length})`}
             </button>
           ))}
         </div>
@@ -414,6 +415,7 @@ Current Pendency:${pendencyNow}
             <span className="bg-[#E8641B] text-white text-[13px] font-bold px-4 py-2 rounded-lg whitespace-nowrap">Choose file →</span>
           </label>
         )}
+        {tab === "summary" && <PendencySummaryTab site={site} />}
         {tab === "planning" && <PendencyPanel site={site} />}
         {/* QUICK ALLOCATE + AUTO-PLAN */}
         {tab === "planning" && <QuickAllocateBar />}
@@ -554,7 +556,21 @@ Current Pendency:${pendencyNow}
               </label>
               {importPreview && (
                 <div className="border border-[#D8DEE7] rounded-lg p-3 flex flex-col gap-2 text-[12px]">
-                  <p className="font-bold font-mono text-[11.5px]">{importPreview.fileName}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold font-mono text-[11.5px]">{importPreview.fileName}</p>
+                    {importPreview.results.filter((r) => r.kind === "container_pool").length > 1 && (
+                      <button
+                        onClick={() => {
+                          const all = importPreview.results.filter((r) => r.kind === "container_pool").flatMap((r) => r.containers);
+                          dispatch({ type: "importContainers", list: all, source: `${importPreview.fileName} (all sheets)` });
+                          setImportPreview(null);
+                        }}
+                        className="text-[11px] font-bold text-white bg-[#1F3864] rounded px-3 py-1.5"
+                      >
+                        Import ALL container sheets together ▸
+                      </button>
+                    )}
+                  </div>
                   {importPreview.results.map((r, i) => (
                     <div key={i} className="border-t border-[#EDF0F5] pt-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1349,6 +1365,265 @@ function PendencyPanel({ site }: { site: import("@/lib/types").Site }) {
             <p className="text-[11px] text-[#5C6B80] mt-1">No pendency feed<br />deployment only</p>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Pendency Summary — the live version of the manually-maintained Excel ─────
+// Mirrors "EXIM PENDENCY REPORT" exactly as the team knows it: import by dwell
+// day × terminal × normal/scanning × 20'/40', export by cutoff day, total
+// pendency box, yard inventory, terminal-wise ITV deployment plan. Computed
+// live from the imported pool + assignments — no more hand-built pivot.
+function PendencySummaryTab({ site }: { site: import("@/lib/types").Site }) {
+  const { state } = useApp();
+  const terms = site.destinations.filter((d) => d.kind === "terminal").map((d) => d.id);
+  const now = new Date();
+  const DAY = 86400000;
+
+  const imports = state.pool.filter((c) => (c.direction ?? "import") === "import");
+  const exports_ = state.pool.filter((c) => c.direction === "export");
+
+  // dwell bucket 0=TODAY … 6=7th DAY & Above
+  const dwellBucket = (c: (typeof imports)[number]) => Math.min(6, Math.floor((c.pendencyHrs ?? 0) / 24));
+  const IMP_ROWS = ["7th DAY & Above", "6th DAY", "5th DAY", "4th DAY", "3rd DAY", "2nd DAY", "TODAY"]; // bucket 6..0
+  const impCell = (bucket: number, term: string, scan: boolean, size: "20" | "40") =>
+    imports.filter((c) => dwellBucket(c) === bucket && c.terminal === term && !!c.scan === scan && c.size === size).length;
+  const impTeu = (bucket: number, scan: boolean) =>
+    imports.filter((c) => dwellBucket(c) === bucket && !!c.scan === scan).reduce((a, c) => a + c.teu, 0);
+  const dt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+
+  // export cutoff bucket 0=TODAY CUTOFF+CP … 4=5th DAY
+  const cutBucket = (c: (typeof exports_)[number]) => {
+    const ms = parseSheetDateMs(c.cutoff);
+    if (isNaN(ms)) return 0;
+    const days = Math.floor((ms - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / DAY);
+    return Math.max(0, Math.min(4, days));
+  };
+  const EXP_ROWS = ["5th DAY", "4th DAY", "3rd DAY", "2nd DAY", "TODAY CUTOFF+CP"]; // bucket 4..0
+  const expCell = (bucket: number, term: string, size: "20" | "40") =>
+    exports_.filter((c) => cutBucket(c) === bucket && c.terminal === term && c.size === size).length;
+  const expTeu = (bucket: number) => exports_.filter((c) => cutBucket(c) === bucket).reduce((a, c) => a + c.teu, 0);
+
+  // totals box
+  const tExp = exports_.reduce((a, c) => a + c.teu, 0);
+  const tImpN = imports.filter((c) => !c.scan).reduce((a, c) => a + c.teu, 0);
+  const tImpS = imports.filter((c) => c.scan).reduce((a, c) => a + c.teu, 0);
+
+  // deployment plan
+  const asg = Object.values(state.assignments);
+  const planItv = (term: string, mode: "import" | "export") => asg.filter((a) => a.target === term && a.purpose === mode).length;
+  const planBox = (term: string, mode: "import" | "export", size: "20" | "40") =>
+    (mode === "import" ? imports : exports_).filter((c) => c.terminal === term && c.size === size).length;
+  const availItv = state.vehicles.filter((v) => !["breakdown", "no_driver"].includes(v.status)).length - Object.keys(state.assignments).length;
+
+  const H = "border border-[#9FB3C8] px-1.5 py-0.5 text-center";
+  const HB = `${H} bg-[#1F3864] text-white font-bold`;
+  const HG = `${H} bg-[#D5E4F0] font-bold`;
+  const cell = (n: number, aged = false) => (
+    <td className={`${H} font-mono tabular-nums ${n > 0 ? (aged ? "bg-[#F8CFCF] font-bold" : "bg-[#FBE9E9] font-semibold") : ""}`}>{n}</td>
+  );
+
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
+        {/* title bar — same as the Excel */}
+        <div className="bg-[#1F3864] text-white text-center font-extrabold text-[16px] py-2 rounded flex items-center justify-center gap-3">
+          EXIM PENDENCY REPORT AS ON {`${String(now.getDate()).padStart(2, "0")}-${String(now.getMonth() + 1).padStart(2, "0")}-${now.getFullYear()} ${now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`}
+          <span className="text-[9px] font-bold bg-[#1E9E5A] rounded-full px-2 py-0.5 tracking-wider">LIVE</span>
+        </div>
+
+        {/* IMPORT — dwell day × terminal × normal/scanning × size */}
+        <table className="mt-3 text-[11px] whitespace-nowrap border-collapse">
+          <thead>
+            <tr>
+              <td className={`${HB} text-left`} rowSpan={3}>DISCHARGE</td>
+              <td className={HB} rowSpan={3}>Dwell Date</td>
+              {terms.map((t) => <td key={t} className={HG} colSpan={4}>{t}</td>)}
+              <td className={HG} colSpan={2}>Exim Scanning</td>
+              <td className={HG} rowSpan={2}>Normal<br/>TEU&apos;s</td>
+              <td className={HG} rowSpan={2}>Scanning<br/>TEU&apos;s</td>
+              <td className={`${HB}`} rowSpan={3}>REMARK</td>
+            </tr>
+            <tr>
+              {terms.map((t) => (
+                <React.Fragment key={t}>
+                  <td className={HG} colSpan={2}>Normal</td>
+                  <td className={HG} colSpan={2}>Scanning</td>
+                </React.Fragment>
+              ))}
+              <td className={HG} colSpan={2}>20&apos; / 40&apos;</td>
+            </tr>
+            <tr>
+              {terms.map((t) => (
+                <React.Fragment key={t}>
+                  <td className={HG}>20&apos;</td><td className={HG}>40&apos;</td><td className={HG}>20&apos;</td><td className={HG}>40&apos;</td>
+                </React.Fragment>
+              ))}
+              <td className={HG}>20&apos;</td><td className={HG}>40&apos;</td>
+              <td className={HG}>TEU</td><td className={HG}>TEU</td>
+            </tr>
+          </thead>
+          <tbody>
+            {IMP_ROWS.map((label, i) => {
+              const bucket = 6 - i;
+              const rowDate = new Date(now.getTime() - bucket * DAY);
+              const aged = bucket >= 1;
+              return (
+                <tr key={label}>
+                  <td className={`${H} text-left font-bold`}>{label}</td>
+                  <td className={`${H} font-mono`}>{dt(rowDate)}</td>
+                  {terms.map((t) => (
+                    <React.Fragment key={t}>
+                      {cell(impCell(bucket, t, false, "20"), aged)}
+                      {cell(impCell(bucket, t, false, "40"), aged)}
+                      {cell(impCell(bucket, t, true, "20"), aged)}
+                      {cell(impCell(bucket, t, true, "40"), aged)}
+                    </React.Fragment>
+                  ))}
+                  {cell(0)}{cell(0)}
+                  {cell(impTeu(bucket, false), aged)}
+                  {cell(impTeu(bucket, true), aged)}
+                  <td className={`${H} text-left text-[#C0392B] font-bold`}>{bucket >= 5 && impTeu(bucket, false) + impTeu(bucket, true) > 0 ? "LINE HOLD" : ""}</td>
+                </tr>
+              );
+            })}
+            <tr>
+              <td className={`${H} text-left font-bold`}>CHECK PACKAGE</td>
+              <td className={`${H} font-mono`}>{dt(now)}</td>
+              {terms.map((t) => <React.Fragment key={t}>{cell(0)}{cell(0)}{cell(0)}{cell(0)}</React.Fragment>)}
+              {cell(0)}{cell(0)}{cell(0)}{cell(0)}
+              <td className={H}></td>
+            </tr>
+            <tr>
+              <td className={`${HB} text-left`} colSpan={2}>IMPORT · TOTAL DPD</td>
+              {terms.map((t) => (
+                <React.Fragment key={t}>
+                  <td className={`${HB} font-mono`}>{imports.filter((c) => c.terminal === t && !c.scan && c.size === "20").length}</td>
+                  <td className={`${HB} font-mono`}>{imports.filter((c) => c.terminal === t && !c.scan && c.size === "40").length}</td>
+                  <td className={`${HB} font-mono`}>{imports.filter((c) => c.terminal === t && c.scan && c.size === "20").length}</td>
+                  <td className={`${HB} font-mono`}>{imports.filter((c) => c.terminal === t && c.scan && c.size === "40").length}</td>
+                </React.Fragment>
+              ))}
+              <td className={`${HB} font-mono`}>0</td><td className={`${HB} font-mono`}>0</td>
+              <td className={`${HB} font-mono`}>{tImpN}</td>
+              <td className={`${HB} font-mono`}>{tImpS}</td>
+              <td className={HB}></td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* EXPORT — cutoff day × terminal × size */}
+        <table className="mt-4 text-[11px] whitespace-nowrap border-collapse">
+          <thead>
+            <tr>
+              <td className={`${HB} text-left`} rowSpan={2}>CUTOFF</td>
+              <td className={HB} rowSpan={2}>Cutoff Date</td>
+              {terms.map((t) => <td key={t} className={HG} colSpan={2}>{t}</td>)}
+              <td className={HG} rowSpan={2}>TEU&apos;s</td>
+            </tr>
+            <tr>{terms.map((t) => <React.Fragment key={t}><td className={HG}>20&apos;</td><td className={HG}>40&apos;</td></React.Fragment>)}</tr>
+          </thead>
+          <tbody>
+            {EXP_ROWS.map((label, i) => {
+              const bucket = 4 - i;
+              const rowDate = new Date(now.getTime() + bucket * DAY);
+              const urgent = bucket <= 1;
+              return (
+                <tr key={label}>
+                  <td className={`${H} text-left font-bold`}>{label}</td>
+                  <td className={`${H} font-mono`}>{dt(rowDate)}</td>
+                  {terms.map((t) => (
+                    <React.Fragment key={t}>
+                      {cell(expCell(bucket, t, "20"), urgent)}
+                      {cell(expCell(bucket, t, "40"), urgent)}
+                    </React.Fragment>
+                  ))}
+                  {cell(expTeu(bucket), urgent)}
+                </tr>
+              );
+            })}
+            <tr>
+              <td className={`${HB} text-left`} colSpan={2}>EXPORT · TOTAL</td>
+              {terms.map((t) => (
+                <React.Fragment key={t}>
+                  <td className={`${HB} font-mono`}>{exports_.filter((c) => c.terminal === t && c.size === "20").length}</td>
+                  <td className={`${HB} font-mono`}>{exports_.filter((c) => c.terminal === t && c.size === "40").length}</td>
+                </React.Fragment>
+              ))}
+              <td className={`${HB} font-mono`}>{tExp}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* boxes: total pendency + yard inventory */}
+        <div className="mt-4 flex flex-wrap gap-4">
+          <table className="text-[11.5px] border-collapse">
+            <thead><tr><td className={HB} colSpan={2}>TOTAL PENDENCY</td></tr></thead>
+            <tbody>
+              {([["EXPORT", tExp, true], ["IMPORT - NORMAL", tImpN, true], ["IMPORT - SCANNING", tImpS, false], ["CHECK PACKAGE", 0, false]] as [string, number, boolean][]).map(([k, v, red]) => (
+                <tr key={k}>
+                  <td className={`${H} text-left font-semibold`}>{k}</td>
+                  <td className={`${H} font-mono font-bold ${red && v > 0 ? "bg-[#F8CFCF]" : ""}`}>{v}</td>
+                </tr>
+              ))}
+              <tr><td className={`${HB} text-left`}>TOTAL</td><td className={`${HB} font-mono ${tExp + tImpN + tImpS > 0 ? "bg-[#C0392B]" : ""}`}>{tExp + tImpN + tImpS}</td></tr>
+              <tr><td className={`${H} text-left text-[#C0392B] font-bold`}>Terminal HOLD MICT</td><td className={`${H} font-mono`}>00 TEUs</td></tr>
+              <tr><td className={`${H} text-left font-semibold`}>EN-BLOCK LDD</td><td className={`${H} font-mono`}>00 Teus</td></tr>
+              <tr><td className={`${H} text-left font-semibold`}>EN-BLOCK MTY</td><td className={`${H} font-mono`}>00 Teus</td></tr>
+            </tbody>
+          </table>
+
+          <table className="text-[11.5px] border-collapse">
+            <thead>
+              <tr><td className={HB} colSpan={4}>YARD INVENTORY</td></tr>
+              <tr><td className={HG}>SEGMENT</td><td className={HG}>20</td><td className={HG}>40</td><td className={HG}>TEUS</td></tr>
+            </thead>
+            <tbody>
+              {["EXPORT - DOC", "EXPORT - BUFFER", "CHECK PACKAGE", "IMPORT"].map((seg) => (
+                <tr key={seg}>
+                  <td className={`${H} text-left font-semibold`}>{seg}</td>
+                  <td className={`${H} text-[#5C6B80]`}>—</td><td className={`${H} text-[#5C6B80]`}>—</td><td className={`${H} text-[#5C6B80]`}>—</td>
+                </tr>
+              ))}
+              <tr><td className={`${HB} text-left`}>TOTAL</td><td className={HB}>—</td><td className={HB}>—</td><td className={HB}>—</td></tr>
+              <tr><td className={`${H} text-left text-[10px] text-[#5C6B80]`} colSpan={4}>yard inventory feed not connected yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Terminal-wise ITV deployment plan — live from assignments */}
+        <table className="mt-4 text-[11px] whitespace-nowrap border-collapse">
+          <thead>
+            <tr><td className={HB} colSpan={2 + terms.length * 3}>Terminal Wise ITV Deployment Plan <span className="font-normal">(boxes pending by size · ITVs = live assignments)</span></td></tr>
+            <tr>
+              <td className={`${HG} text-left`} rowSpan={2}>MOVEMENT MODE</td>
+              {terms.map((t) => <td key={t} className={HG} colSpan={3}>{t}</td>)}
+              <td className={`${HG}`} rowSpan={2}>Available<br/>Trailers</td>
+            </tr>
+            <tr>{terms.map((t) => <React.Fragment key={t}><td className={HG}>20&apos;</td><td className={HG}>40&apos;</td><td className={HG}>ITVs</td></React.Fragment>)}</tr>
+          </thead>
+          <tbody>
+            {(["export", "import"] as const).map((mode) => (
+              <tr key={mode}>
+                <td className={`${H} text-left font-bold uppercase`}>{mode}</td>
+                {terms.map((t) => (
+                  <React.Fragment key={t}>
+                    {cell(planBox(t, mode, "20"))}
+                    {cell(planBox(t, mode, "40"))}
+                    <td className={`${H} font-mono font-bold ${planItv(t, mode) > 0 ? "bg-[#DDF0E4]" : ""}`}>{planItv(t, mode)}</td>
+                  </React.Fragment>
+                ))}
+                {mode === "export"
+                  ? <td className={`${H} font-mono font-extrabold bg-[#BFE0F5]`} rowSpan={2}>{Math.max(0, availItv)}</td>
+                  : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[10.5px] text-[#5C6B80] mt-2">
+          Live — recomputes the moment a pendency file lands or an ITV is assigned. Same layout as the manual Excel; LINE HOLD auto-flags 6th day+.
+        </p>
       </div>
     </div>
   );

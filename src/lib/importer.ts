@@ -189,3 +189,16 @@ export function extractDrivers(sheet: ParsedSheet): ImportedDriver[] {
     }];
   });
 }
+
+/** Parse sheet-style dates: "7/5/26 10:00" (m/d/yy), "20-06-2026 08:30" (d-m-yyyy), ISO. NaN if unparseable. */
+export function parseSheetDateMs(raw?: string): number {
+  if (!raw) return NaN;
+  let m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) {
+    const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    return new Date(y, Number(m[1]) - 1, Number(m[2]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+  }
+  m = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+  return Date.parse(raw);
+}
