@@ -98,6 +98,14 @@ export interface Driver {
   note?: string; // planner-visible restriction/preference, e.g. "no MICT"
 }
 
+// Supervisor master — mobile app identity lookup + approvals attribution.
+export interface Supervisor {
+  id: string;
+  name: string;
+  phone: string;
+  vendor?: string;
+}
+
 // Planner assigns ITV → location/purpose. Import: terminal only (gate gives container).
 // Export: pickup yard + destination terminal.
 export interface Assignment {

@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getIdentity, roleHome } from "@/lib/identity";
 import { useApp, SITE, SHIFT } from "@/lib/store";
 import { Wordmark } from "@/components/Brand";
 import { fmtInr } from "@/lib/incentive";
@@ -46,6 +49,22 @@ const ROLES = [
     cta: "Open equipment",
     accent: false,
   },
+  {
+    href: "/supervisor",
+    tag: "MOBILE · FIELD",
+    title: "Supervisor App",
+    desc: "Fleet status, issue queue, shift approvals — सुपरवाइज़र के लिए",
+    cta: "Open supervisor view",
+    accent: false,
+  },
+  {
+    href: "/operator",
+    tag: "MOBILE · FIELD",
+    title: "Operator App",
+    desc: "Daily hours & moves entry on mapped equipment — ऑपरेटर के लिए",
+    cta: "Open operator view",
+    accent: false,
+  },
 ];
 
 const FEATURES = [
@@ -61,6 +80,19 @@ const FEATURES = [
 
 export default function Home() {
   const { state } = useApp();
+  const router = useRouter();
+
+  // Field devices skip the console entirely: Capacitor app or an onboarded device
+  // goes straight to the person's own view (zero clicks). ?stay=1 keeps the web home.
+  useEffect(() => {
+    const stay = new URLSearchParams(window.location.search).get("stay") === "1";
+    if (stay) return;
+    const isNative = typeof window !== "undefined" && !!(window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+    const id = getIdentity();
+    if (isNative) router.replace(id ? roleHome(id.role) : "/m");
+    else if (id) router.replace(roleHome(id.role));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const running = 60 + state.vehicles.filter((v) => v.status === "running").length;
   const completed = state.trips.filter((t) => t.state === "completed");
   const liveTeu = SHIFT.teuDoneBase + completed.filter((t) => t.id >= 1000).reduce((a, t) => a + t.teu, 0);

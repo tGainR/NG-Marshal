@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useApp, ME_DRIVER_ID, SITE, SHIFT } from "@/lib/store";
+import { useEffect } from "react";
+import { useApp, SITE, SHIFT } from "@/lib/store";
+import { getIdentity } from "@/lib/identity";
 import { fmtClock, fmtInr, isValidContainerNo } from "@/lib/incentive";
 import { Trip } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
@@ -62,18 +64,30 @@ export default function DriverPage() {
   const [photoTaken, setPhotoTaken] = useState(false);
   const [typedNo, setTypedNo] = useState("");
   const [typedSize, setTypedSize] = useState<"20" | "40">("40");
+  const [peek, setPeek] = useState(false);
 
   const rc = state.rateCard;
   const mt = state.milestoneTeu;
-  const me = state.drivers.find((d) => d.id === ME_DRIVER_ID)!;
-  const myTrips = state.trips.filter((t) => t.driverId === ME_DRIVER_ID);
+  // Device identity (set once at onboarding) decides whose view this is — zero clicks.
+  useEffect(() => {
+    const id = getIdentity();
+    if (id?.role === "driver" && id.personId !== state.meDriverId) {
+      dispatch({ type: "setMe", driverId: id.personId });
+    }
+    setPeek(new URLSearchParams(window.location.search).get("peek") === "1");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const me = state.drivers.find((d) => d.id === state.meDriverId) ?? state.drivers[0];
+  const myVeh = state.vehicles.find((v) => v.driverId === state.meDriverId);
+  const myTrips = state.trips.filter((t) => t.driverId === state.meDriverId);
   const done = myTrips.filter((t) => t.state === "completed");
   const active = myTrips.find((t) => !["completed", "aborted", "abandoned"].includes(t.state));
   const teu = done.reduce((a, t) => a + t.teu, 0);
   const milestone = teu >= mt ? rc.milestoneBonus : 0;
   const earned = myTrips.reduce((a, t) => a + (t.earnings?.total ?? 0), 0) + milestone;
   const lastFinished = [...myTrips].reverse().find((t) => ["completed", "aborted"].includes(t.state) && t.earnings);
-  const asg = state.assignments["A333"];
+  const asg = myVeh ? state.assignments[myVeh.id] : undefined;
 
   // the ONE thing: where to go right now
   const destination = active
@@ -90,6 +104,11 @@ export default function DriverPage() {
 
   return (
     <main className="min-h-screen bg-[#31405A] py-5 px-4 flex flex-col items-center gap-3">
+      {peek && (
+        <a href="/supervisor" className="w-full max-w-[390px] bg-[#E8641B] text-white text-center font-bold rounded-xl py-2.5 text-[14px]">
+          ← Supervisor view पर वापस
+        </a>
+      )}
       <div className="w-full max-w-[390px] flex justify-between items-center text-[#B9C6DE] text-xs">
         <Link href="/" className="hover:opacity-80"><Wordmark dark compact /></Link>
         <span>{SHIFT.label}</span>
@@ -99,7 +118,7 @@ export default function DriverPage() {
         {/* header — one line */}
         <div className="flex justify-between items-center px-4 py-3 border-b border-[#2A3A50]">
           <p className="text-[13px] font-semibold">{me.nameHi}</p>
-          <span className="font-mono text-[12px] font-bold bg-[#1A2739] border border-[#2A3A50] text-[#FFC08A] px-2 py-0.5 rounded">A333</span>
+          <span className="font-mono text-[12px] font-bold bg-[#1A2739] border border-[#2A3A50] text-[#FFC08A] px-2 py-0.5 rounded">{myVeh?.id ?? "—"}</span>
         </div>
 
         <div className="p-4 flex flex-col gap-3">
@@ -110,7 +129,14 @@ export default function DriverPage() {
                 <p className="text-[12px] text-[#8FA0B5]">कल · Yesterday</p>
                 <p className="text-[34px] font-extrabold text-[#4CD584]">₹1,360</p>
               </div>
-              <Slide label="ड्यूटी शुरू करो" sub="ITV A333" color="green" onClick={() => dispatch({ type: "goOnDuty" })} />
+              {myVeh ? (
+                <Slide label="ड्यूटी शुरू करो" sub={`ITV ${myVeh.id}`} color="green" onClick={() => dispatch({ type: "goOnDuty" })} />
+              ) : (
+                <div className="bg-[#1A2739] border-2 border-[#D64545]/60 rounded-2xl p-5 text-center">
+                  <p className="text-[22px] font-extrabold text-[#FF9E9E]">ITV नहीं मिला</p>
+                  <p className="text-[14px] text-[#C6D2E2] mt-2">Supervisor से बोलें — master control में आपकी ITV mapping नहीं है</p>
+                </div>
+              )}
             </>
           )}
 

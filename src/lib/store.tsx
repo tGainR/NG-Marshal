@@ -6,7 +6,7 @@ import type { DataStore } from "./data/DataStore";
 import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, Trip, Vehicle, Vendor, Verification } from "./types";
 import {
   DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, PLAN_RULES, RATE_CARD, SEED_ISSUES,
-  SEED_TRIPS, SHIFT, SITE, SITES, VEHICLES,
+  SEED_TRIPS, SHIFT, SITE, SITES, SUPERVISORS, VEHICLES,
 } from "./seed";
 import { buildPlan, pickForQuickAllocate } from "./planner";
 import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
@@ -29,6 +29,7 @@ export interface AppState {
   operators: Operator[]; // equipment operator master
   equipmentLogs: EquipmentLog[]; // daily hours/moves entries, operator-wise
   nextLogId: number;
+  meDriverId: string; // whose driver-view this device shows — set from device identity at onboarding, NEVER synced
   rateCard: RateCard; // editable settings — drives ALL incentive math
   milestoneTeu: number; // celebration threshold, editable
   offer: Offer | null;
@@ -43,6 +44,7 @@ export interface AppState {
 
 type Action =
   | { type: "tick" }
+  | { type: "setMe"; driverId: string }
   | { type: "goOnDuty" }
   | { type: "goOffDuty" }
   | { type: "acceptOffer" }
@@ -53,6 +55,8 @@ type Action =
   | { type: "gateRejected" }
   | { type: "approveTrips"; driverId: string }
   | { type: "setIssueStatus"; id: number; status: Issue["status"] }
+  | { type: "setVehicleStatus"; vehicleId: string; status: Vehicle["status"]; note?: string; by: string }
+  | { type: "reportEquipmentIssue"; equipmentId: string; by: string }
   | { type: "assignVehicle"; vehicleId: string; assignment: Assignment }
   | { type: "unassignVehicle"; vehicleId: string }
   | { type: "importContainers"; list: ImportedContainer[]; source: string }
@@ -125,10 +129,20 @@ function makeOffer(now: number, assigned?: Assignment): Offer {
   };
 }
 
+function meVehId(s: AppState): string | undefined {
+  // "whatever is given to them": the ITV mapped to this driver in master control
+  return s.vehicles.find((v) => v.driverId === s.meDriverId)?.id;
+}
+
+function meName(s: AppState): string {
+  const d = s.drivers.find((x) => x.id === s.meDriverId);
+  return d ? d.name.split(" ")[0] + " " + (d.name.split(" ")[1]?.[0] ?? "") + "." : "Driver";
+}
+
 function myActiveTrip(s: AppState): Trip | undefined {
   return s.trips.find(
     (t) =>
-      t.driverId === ME_DRIVER_ID &&
+      t.driverId === s.meDriverId &&
       !["completed", "aborted", "abandoned"].includes(t.state)
   );
 }
@@ -154,7 +168,7 @@ function advanceMyTrip(s: AppState): AppState {
     case "enroute_terminal":
       if (dwell >= 6) {
         const s2 = patchTrip({ state: "at_gate" }, `Reached ${t.terminal} gate (geofence)`);
-        return { ...s2, vehicles: setVehicle(s2, ME_VEHICLE_ID, { zone: `${t.terminal} gate`, statusNote: `${t.terminal} ${t.movement} · at gate` }) };
+        return { ...s2, vehicles: setVehicle(s2, t.vehicleId, { zone: `${t.terminal} gate`, statusNote: `${t.terminal} ${t.movement} · at gate` }) };
       }
       return s;
     case "at_gate": {
@@ -170,8 +184,8 @@ function advanceMyTrip(s: AppState): AppState {
           status: "open",
           raisedBy: "AUTO · GPS",
           owner: "Shift Incharge",
-          vehicleId: ME_VEHICLE_ID,
-          detail: `${t.terminal} gate · A333 queued beyond threshold · no-fault clock running`,
+          vehicleId: t.vehicleId,
+          detail: `${t.terminal} gate · ${t.vehicleId} queued beyond threshold · no-fault clock running`,
           openedAt: s.now,
           slaMin: 30,
         };
@@ -182,13 +196,13 @@ function advanceMyTrip(s: AppState): AppState {
     case "ticket_captured":
       if (dwell >= 5) {
         const s2 = patchTrip({ state: "gate_out" }, "Gate out (geofence)");
-        return { ...s2, vehicles: setVehicle(s2, ME_VEHICLE_ID, { zone: "En route", statusNote: `${t.terminal} → EXIM · loaded` }) };
+        return { ...s2, vehicles: setVehicle(s2, t.vehicleId, { zone: "En route", statusNote: `${t.terminal} → EXIM · loaded` }) };
       }
       return s;
     case "gate_out":
       if (dwell >= 6) {
         const s2 = patchTrip({ state: "at_yard" }, "Reached EXIM yard (geofence)");
-        return { ...s2, vehicles: setVehicle(s2, ME_VEHICLE_ID, { zone: "EXIM yard", statusNote: "Offloading" }) };
+        return { ...s2, vehicles: setVehicle(s2, t.vehicleId, { zone: "EXIM yard", statusNote: "Offloading" }) };
       }
       return s;
     case "at_yard":
@@ -199,10 +213,10 @@ function advanceMyTrip(s: AppState): AppState {
           { state: "completed", verification: "verified" as Verification, earnings },
           "Yard record matched → VERIFIED"
         );
-        s2 = { ...s2, vehicles: setVehicle(s2, ME_VEHICLE_ID, { zone: "EXIM yard", statusNote: "Free · awaiting job" }) };
+        s2 = { ...s2, vehicles: setVehicle(s2, t.vehicleId, { zone: "EXIM yard", statusNote: "Free · awaiting job" }) };
         // milestone check
         const myTeu = s2.trips
-          .filter((x) => x.driverId === ME_DRIVER_ID && x.state === "completed")
+          .filter((x) => x.driverId === s2.meDriverId && x.state === "completed")
           .reduce((a, x) => a + x.teu, 0);
         if (!s2.milestoneHit && myTeu >= s2.milestoneTeu) {
           return { ...s2, milestoneHit: true, nextOfferIn: 8, celebration: `${myTeu}`, toast: null };
@@ -221,7 +235,8 @@ function backgroundSim(s: AppState): AppState {
   const r = Math.random();
   if (r < 0.5) {
     // a background running vehicle completes a trip (adds to shift TEUs via trips list)
-    const candidates = s.vehicles.filter((v) => v.status === "running" && v.id !== ME_VEHICLE_ID && v.driverId);
+    const mv = meVehId(s);
+    const candidates = s.vehicles.filter((v) => v.status === "running" && v.id !== mv && v.driverId);
     if (candidates.length) {
       const v = candidates[Math.floor(Math.random() * candidates.length)];
       const iso = Math.random() < 0.45 ? "4510" : "2210";
@@ -266,11 +281,12 @@ function reducer(s: AppState, a: Action): AppState {
           s2 = { ...s2, offer: { ...s2.offer, expiresIn: left } };
         }
       } else {
-        const me = s2.drivers.find((d) => d.id === ME_DRIVER_ID)!;
-        if (me.onDuty && !myActiveTrip(s2)) {
+        const me = s2.drivers.find((d) => d.id === s2.meDriverId);
+        const mv = meVehId(s2);
+        if (me?.onDuty && mv && !myActiveTrip(s2)) {
           if (s2.nextOfferIn > 0) {
             s2 = { ...s2, nextOfferIn: s2.nextOfferIn - 1 };
-            if (s2.nextOfferIn === 0) s2 = { ...s2, offer: makeOffer(s2.now, s2.assignments[ME_VEHICLE_ID]) };
+            if (s2.nextOfferIn === 0) s2 = { ...s2, offer: makeOffer(s2.now, s2.assignments[mv]) };
           }
         }
       }
@@ -279,13 +295,19 @@ function reducer(s: AppState, a: Action): AppState {
       return s2;
     }
 
+    case "setMe":
+      if (s.meDriverId === a.driverId) return s;
+      return { ...s, meDriverId: a.driverId, offer: null, nextOfferIn: 0 };
+
     case "goOnDuty": {
+      const mv = meVehId(s);
+      if (!mv) return { ...s, toast: "ITV नहीं मिला — supervisor से बोलें (mapping in master control)" };
       const s2: AppState = {
         ...s,
-        drivers: s.drivers.map((d) => (d.id === ME_DRIVER_ID ? { ...d, onDuty: true } : d)),
-        vehicles: setVehicle(s, ME_VEHICLE_ID, { status: "running", driverId: ME_DRIVER_ID, zone: "EXIM yard", statusNote: "On duty · awaiting job" }),
+        drivers: s.drivers.map((d) => (d.id === s.meDriverId ? { ...d, onDuty: true } : d)),
+        vehicles: setVehicle(s, mv, { status: "running", zone: "EXIM yard", statusNote: "On duty · awaiting job" }),
         nextOfferIn: 4,
-        toast: "On duty · ITV A333 claimed ✓",
+        toast: `On duty · ITV ${mv} claimed ✓`,
       };
       return s2;
     }
@@ -293,18 +315,18 @@ function reducer(s: AppState, a: Action): AppState {
     case "goOffDuty":
       return {
         ...s,
-        drivers: s.drivers.map((d) => (d.id === ME_DRIVER_ID ? { ...d, onDuty: false } : d)),
-        vehicles: setVehicle(s, ME_VEHICLE_ID, { status: "offline", statusNote: "Shift ended", zone: "Parking" }),
+        drivers: s.drivers.map((d) => (d.id === s.meDriverId ? { ...d, onDuty: false } : d)),
+        vehicles: meVehId(s) ? setVehicle(s, meVehId(s)!, { status: "offline", statusNote: "Shift ended", zone: "Parking" }) : s.vehicles,
         offer: null,
       };
 
     case "acceptOffer": {
-      if (!s.offer) return s;
+      if (!s.offer || !meVehId(s)) return s;
       const o = s.offer;
       const trip: Trip = {
         id: s.nextTripId,
-        vehicleId: ME_VEHICLE_ID,
-        driverId: ME_DRIVER_ID,
+        vehicleId: meVehId(s) ?? "",
+        driverId: s.meDriverId,
         terminal: o.terminal,
         pickup: o.pickup,
         movement: o.movement,
@@ -322,7 +344,7 @@ function reducer(s: AppState, a: Action): AppState {
         offer: null,
         trips: [...s.trips, trip],
         nextTripId: s.nextTripId + 1,
-        vehicles: setVehicle(s, ME_VEHICLE_ID, { zone: "En route", statusNote: `→ ${o.terminal} · ${o.movement}` }),
+        vehicles: setVehicle(s, meVehId(s)!, { zone: "En route", statusNote: `→ ${o.terminal} · ${o.movement}` }),
       };
     }
 
@@ -366,9 +388,9 @@ function reducer(s: AppState, a: Action): AppState {
         id: s.nextIssueId,
         type: a.reason === "no parchi" ? "no_parchi" : "excess_standby",
         status: "open",
-        raisedBy: "Driver · Ramesh Y.",
+        raisedBy: `Driver · ${meName(s)}`,
         owner: "Shift Incharge",
-        vehicleId: ME_VEHICLE_ID,
+        vehicleId: meVehId(s),
         detail: `Driver flagged waiting${t ? ` at ${t.terminal}` : ""} · reason: ${a.reason}`,
         openedAt: s.now,
         slaMin: 30,
@@ -383,9 +405,9 @@ function reducer(s: AppState, a: Action): AppState {
         id: s.nextIssueId,
         type: "excess_standby",
         status: "open",
-        raisedBy: "Driver · Ramesh Y.",
+        raisedBy: `Driver · ${meName(s)}`,
         owner: "Shift Incharge",
-        vehicleId: ME_VEHICLE_ID,
+        vehicleId: t.vehicleId,
         detail: `Trip abandoned at ${t.terminal} · reason: ${a.reason} · declared (not hidden)`,
         openedAt: s.now,
         slaMin: 30,
@@ -396,7 +418,7 @@ function reducer(s: AppState, a: Action): AppState {
         issues: [issue, ...s.issues],
         nextIssueId: s.nextIssueId + 1,
         nextOfferIn: 10,
-        vehicles: setVehicle(s, ME_VEHICLE_ID, { zone: "En route", statusNote: "Returning empty · abandoned" }),
+        vehicles: setVehicle(s, t.vehicleId, { zone: "En route", statusNote: "Returning empty · abandoned" }),
         toast: "Abandon logged with reason — supervisor notified",
       };
     }
@@ -409,9 +431,9 @@ function reducer(s: AppState, a: Action): AppState {
         id: s.nextIssueId,
         type: "gate_rejected",
         status: "open",
-        raisedBy: "Driver · Ramesh Y.",
+        raisedBy: `Driver · ${meName(s)}`,
         owner: "Docs desk",
-        vehicleId: ME_VEHICLE_ID,
+        vehicleId: t.vehicleId,
         detail: `Gate rejected at ${t.terminal} (pre-advice/wrong container) · photo attached · partial credit ₹${credit}`,
         openedAt: s.now,
         slaMin: 45,
@@ -426,7 +448,7 @@ function reducer(s: AppState, a: Action): AppState {
         issues: [issue, ...s.issues],
         nextIssueId: s.nextIssueId + 1,
         nextOfferIn: 10,
-        vehicles: setVehicle(s, ME_VEHICLE_ID, { zone: "En route", statusNote: "Returning · gate rejected" }),
+        vehicles: setVehicle(s, t.vehicleId, { zone: "En route", statusNote: "Returning · gate rejected" }),
         toast: `Gate rejection logged — not your fault, ₹${credit} partial credit`,
       };
     }
@@ -445,9 +467,53 @@ function reducer(s: AppState, a: Action): AppState {
     case "setIssueStatus":
       return { ...s, issues: s.issues.map((i) => (i.id === a.id ? { ...i, status: a.status } : i)) };
 
+    case "setVehicleStatus": {
+      // field entry from the supervisor app — audited like every manual change
+      const issue: Issue = {
+        id: s.nextIssueId,
+        type: a.status === "breakdown" ? "breakdown" : "manual_entry",
+        status: a.status === "breakdown" ? "open" : "resolved",
+        raisedBy: `Supervisor · ${a.by}`,
+        owner: a.status === "breakdown" ? "Workshop" : "Shift Incharge",
+        vehicleId: a.vehicleId,
+        detail: `${a.vehicleId} marked ${a.status.replace("_", " ")}${a.note ? ` · ${a.note}` : ""} (from mobile)`,
+        openedAt: s.now,
+        slaMin: a.status === "breakdown" ? 240 : 0,
+      };
+      return {
+        ...s,
+        vehicles: setVehicle(s, a.vehicleId, { status: a.status, statusNote: a.note ?? (a.status === "breakdown" ? "Marked breakdown (mobile)" : undefined) }),
+        issues: [issue, ...s.issues],
+        nextIssueId: s.nextIssueId + 1,
+        toast: `${a.vehicleId} → ${a.status.replace("_", " ")}`,
+      };
+    }
+
+    case "reportEquipmentIssue": {
+      const eq = s.equipment.find((e) => e.id === a.equipmentId);
+      const issue: Issue = {
+        id: s.nextIssueId,
+        type: "breakdown",
+        status: "open",
+        raisedBy: `Operator · ${a.by}`,
+        owner: "Workshop",
+        vehicleId: a.equipmentId,
+        detail: `Equipment breakdown reported: ${a.equipmentId}${eq ? ` (${eq.type.replace(/_/g, " ")})` : ""} · from mobile`,
+        openedAt: s.now,
+        slaMin: 240,
+      };
+      return {
+        ...s,
+        equipment: s.equipment.map((e) => (e.id === a.equipmentId ? { ...e, status: "breakdown" as const, statusNote: "Reported from mobile" } : e)),
+        issues: [issue, ...s.issues],
+        nextIssueId: s.nextIssueId + 1,
+        toast: `खराबी दर्ज · ${a.equipmentId}`,
+      };
+    }
+
     case "assignVehicle": {
       const asg = a.assignment;
-      const isMe = a.vehicleId === ME_VEHICLE_ID;
+      const isMe = a.vehicleId === meVehId(s);
       return {
         ...s,
         assignments: { ...s.assignments, [a.vehicleId]: asg },
@@ -668,7 +734,7 @@ function reducer(s: AppState, a: Action): AppState {
         assignments,
         issues: [issue, ...s.issues],
         nextIssueId: s.nextIssueId + 1,
-        offer: picked.includes(ME_VEHICLE_ID) ? null : s.offer,
+        offer: picked.includes(meVehId(s) ?? "") ? null : s.offer,
         toast: `${picked.length} ITV → ${a.target}${skipped ? ` · ${skipped}` : ""}`,
       };
     }
@@ -713,7 +779,7 @@ function reducer(s: AppState, a: Action): AppState {
         proposal: null,
         issues: [issue, ...s.issues],
         nextIssueId: s.nextIssueId + 1,
-        offer: s.proposal.changes.some((c) => c.vehicleId === ME_VEHICLE_ID) ? null : s.offer,
+        offer: s.proposal.changes.some((c) => c.vehicleId === meVehId(s)) ? null : s.offer,
         toast: `Auto-plan applied · ${s.proposal.changes.length} ITVs moved`,
       };
     }
@@ -793,6 +859,7 @@ const initial: AppState = {
   operators: OPERATORS,
   equipmentLogs: [],
   nextLogId: 1,
+  meDriverId: ME_DRIVER_ID, // web-demo default; device identity overrides via setMe
   rateCard: RATE_CARD,
   milestoneTeu: SITE.perItvTeuTarget,
   assignments: {
@@ -915,4 +982,4 @@ export function useApp() {
   return ctx;
 }
 
-export { ME_DRIVER_ID, ME_VEHICLE_ID, RATE_CARD, SITE, SHIFT, HOT_JOBS };
+export { ME_DRIVER_ID, ME_VEHICLE_ID, RATE_CARD, SITE, SHIFT, HOT_JOBS, SUPERVISORS };

@@ -1,4 +1,4 @@
-import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator, PlanRules } from "./types";
+import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator, PlanRules, Supervisor } from "./types";
 
 // ——— Mundra EXIM yard site profile ———
 // Destinations = the 4 container terminals + FTWZ (Free Trade Warehousing Zone, now live).
@@ -76,7 +76,7 @@ export const DRIVERS: Driver[] = [
 ];
 
 export const VEHICLES: Vehicle[] = [
-  { id: "A333", tags: [], reg: "GJ12AU8670", vendor: "Active", status: "offline", statusSince: 0, driverId: undefined, zone: "Parking" },
+  { id: "A333", tags: [], reg: "GJ12AU8670", vendor: "Active", status: "offline", statusSince: 0, driverId: ME_DRIVER_ID, zone: "Parking" },
   { id: "A157", tags: [], reg: "GJ39T7157", vendor: "Active", status: "standby", statusSince: -7800, statusNote: "CT3 gate · no location parchi", driverId: "d-sohan", zone: "CT3 gate" },
   { id: "A670", tags: ["high-capacity"], preferFor: ["scanning"], reg: "GJ39T7670", vendor: "Active", status: "breakdown", statusSince: -5400, statusNote: "Workshop · clutch, ETA 16:00", driverId: "d-imran", zone: "Workshop" },
   { id: "7118", tags: [], reg: "GJ39T7118", vendor: "Active", status: "diesel", statusSince: -900, statusNote: "Bowser point · #3 in line", driverId: "d-kishan", zone: "Bowser" },
@@ -209,6 +209,11 @@ export const OPERATORS: Operator[] = [
   { id: "op-pravin", name: "Pravin Solanki", phone: "98250 20202", vendor: "Galaxy", onDuty: true },
   { id: "op-harish", name: "Harish Bhatt", phone: "98250 30303", vendor: "Active", onDuty: true },
   { id: "op-dilip", name: "Dilip Chauhan", phone: "98250 40404", vendor: "Own", onDuty: false },
+];
+
+export const SUPERVISORS: Supervisor[] = [
+  { id: "s-vansh", name: "Vansh Mota", phone: "98250 90909", vendor: "Active" },
+  { id: "s-kalp", name: "Kalp Thacker", phone: "98250 80808", vendor: "Active" },
 ];
 
 export const EQUIPMENT: Equipment[] = [

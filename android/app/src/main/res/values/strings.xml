@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NG Marshal</string>
+    <string name="title_activity_main">NG Marshal</string>
+    <string name="package_name">com.navingroup.ngmarshal</string>
+    <string name="custom_url_scheme">com.navingroup.ngmarshal</string>
+</resources>
