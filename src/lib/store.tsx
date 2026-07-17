@@ -3,9 +3,9 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from "react";
 import { getDataStore } from "./data";
 import type { DataStore } from "./data/DataStore";
-import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, Trip, Vehicle, Vendor, Verification } from "./types";
+import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, SummaryNotes, Trip, Vehicle, Vendor, Verification } from "./types";
 import {
-  DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, PLAN_RULES, RATE_CARD, SEED_ISSUES,
+  DEFAULT_SUMMARY_NOTES, DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, PLAN_RULES, RATE_CARD, SEED_ISSUES,
   SEED_TRIPS, SHIFT, SITE, SITES, SUPERVISORS, VEHICLES,
 } from "./seed";
 import { buildPlan, pickForQuickAllocate } from "./planner";
@@ -23,6 +23,7 @@ export interface AppState {
   sites: Site[]; // projects/sites the operator runs
   activeSiteId: string; // currently-selected site
   planRules: PlanRules; // allocation rules — editable in console, versioned
+  summaryNotes: SummaryNotes; // manual fields of the pendency summary (yard, holds, remarks, CP)
   proposal: PlanProposal | null; // auto-plan suggestion awaiting review
   vendors: Vendor[]; // vendor master (incl. "own" for directly-employed)
   equipment: Equipment[]; // yard equipment master (reach stackers, forklifts, ECH...)
@@ -74,6 +75,7 @@ type Action =
   | { type: "applyProposal" }
   | { type: "discardProposal" }
   | { type: "updatePlanRules"; rules: PlanRules }
+  | { type: "setSummaryNotes"; notes: SummaryNotes }
   | { type: "addSite"; site: Site }
   | { type: "addEquipment"; id: string; equipType: Equipment["type"]; reg: string; vendor: string }
   | { type: "addOperator"; name: string; phone: string; vendor: string }
@@ -803,6 +805,9 @@ function reducer(s: AppState, a: Action): AppState {
       return { ...s, planRules: rules, issues: [issue, ...s.issues], nextIssueId: s.nextIssueId + 1, toast: `Planning rules ${rules.version} live` };
     }
 
+    case "setSummaryNotes":
+      return { ...s, summaryNotes: a.notes, toast: "Summary manual fields saved" };
+
     case "setActiveSite":
       return { ...s, activeSiteId: a.siteId, toast: `Switched to ${s.sites.find((x) => x.id === a.siteId)?.shortName ?? a.siteId}` };
 
@@ -818,6 +823,7 @@ function reducer(s: AppState, a: Action): AppState {
         sites: a.state.sites ?? s.sites,
         activeSiteId: a.state.activeSiteId ?? s.activeSiteId,
         planRules: a.state.planRules ?? s.planRules,
+        summaryNotes: a.state.summaryNotes ?? s.summaryNotes,
         proposal: null,
         pool: a.state.pool ?? s.pool ?? [],
         equipment: a.state.equipment ?? s.equipment ?? [],
@@ -850,6 +856,7 @@ const initial: AppState = {
   sites: SITES,
   activeSiteId: SITE.id,
   planRules: PLAN_RULES,
+  summaryNotes: DEFAULT_SUMMARY_NOTES,
   proposal: null,
   vendors: [
     { id: "active", name: "Active", type: "vendor" },
@@ -882,7 +889,7 @@ const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } 
 // Persistable subset — sim-only fields (now, offer, toast, celebration, nextOfferIn) never sync.
 const PERSIST_KEYS = [
   "drivers", "vehicles", "trips", "issues", "assignments", "pool",
-  "vendors", "rateCard", "milestoneTeu", "sites", "activeSiteId", "planRules",
+  "vendors", "rateCard", "milestoneTeu", "sites", "activeSiteId", "planRules", "summaryNotes",
   "equipment", "operators", "equipmentLogs", "nextLogId",
   "nextTripId", "nextIssueId", "passesThisShift", "milestoneHit",
 ] as const;

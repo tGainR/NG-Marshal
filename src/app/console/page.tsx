@@ -1376,7 +1376,12 @@ function PendencyPanel({ site }: { site: import("@/lib/types").Site }) {
 // pendency box, yard inventory, terminal-wise ITV deployment plan. Computed
 // live from the imported pool + assignments — no more hand-built pivot.
 function PendencySummaryTab({ site }: { site: import("@/lib/types").Site }) {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
+  const [edit, setEdit] = useState(false);
+  const [nz, setNz] = useState(() => JSON.parse(JSON.stringify(state.summaryNotes)) as typeof state.summaryNotes);
+  const notes = edit ? nz : state.summaryNotes;
+  const saveNotes = () => { dispatch({ type: "setSummaryNotes", notes: nz }); setEdit(false); };
+  const startEdit = () => { setNz(JSON.parse(JSON.stringify(state.summaryNotes))); setEdit(true); };
   const terms = site.destinations.filter((d) => d.kind === "terminal").map((d) => d.id);
   const now = new Date();
   const DAY = 86400000;
@@ -1428,9 +1433,20 @@ function PendencySummaryTab({ site }: { site: import("@/lib/types").Site }) {
     <div className="mt-4 flex flex-col gap-4">
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
         {/* title bar — same as the Excel */}
-        <div className="bg-[#1F3864] text-white text-center font-extrabold text-[16px] py-2 rounded flex items-center justify-center gap-3">
-          EXIM PENDENCY REPORT AS ON {`${String(now.getDate()).padStart(2, "0")}-${String(now.getMonth() + 1).padStart(2, "0")}-${now.getFullYear()} ${now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`}
-          <span className="text-[9px] font-bold bg-[#1E9E5A] rounded-full px-2 py-0.5 tracking-wider">LIVE</span>
+        <div className="bg-[#1F3864] text-white font-extrabold text-[16px] py-2 px-3 rounded flex items-center justify-between gap-3">
+          <span className="w-24" />
+          <span className="flex items-center gap-3">
+            EXIM PENDENCY REPORT AS ON {`${String(now.getDate()).padStart(2, "0")}-${String(now.getMonth() + 1).padStart(2, "0")}-${now.getFullYear()} ${now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`}
+            <span className="text-[9px] font-bold bg-[#1E9E5A] rounded-full px-2 py-0.5 tracking-wider">LIVE</span>
+          </span>
+          {edit ? (
+            <span className="flex gap-1.5">
+              <button onClick={saveNotes} className="text-[11px] font-bold bg-[#1E9E5A] rounded px-2.5 py-1">Save</button>
+              <button onClick={() => setEdit(false)} className="text-[11px] font-bold bg-[#3A5480] rounded px-2.5 py-1">Cancel</button>
+            </span>
+          ) : (
+            <button onClick={startEdit} className="text-[11px] font-bold bg-[#E8641B] rounded px-2.5 py-1 w-24">✎ Edit manual</button>
+          )}
         </div>
 
         {/* IMPORT — dwell day × terminal × normal/scanning × size */}
@@ -1484,7 +1500,18 @@ function PendencySummaryTab({ site }: { site: import("@/lib/types").Site }) {
                   {cell(0)}{cell(0)}
                   {cell(impTeu(bucket, false), aged)}
                   {cell(impTeu(bucket, true), aged)}
-                  <td className={`${H} text-left text-[#C0392B] font-bold`}>{bucket >= 5 && impTeu(bucket, false) + impTeu(bucket, true) > 0 ? "LINE HOLD" : ""}</td>
+                  <td className={`${H} text-left text-[#C0392B] font-bold`}>
+                    {edit ? (
+                      <input
+                        value={nz.remarks[bucket] ?? ""}
+                        onChange={(e) => setNz({ ...nz, remarks: { ...nz.remarks, [bucket]: e.target.value } })}
+                        placeholder={bucket >= 5 && impTeu(bucket, false) + impTeu(bucket, true) > 0 ? "LINE HOLD" : "—"}
+                        className="w-28 border border-[#D8DEE7] rounded px-1 py-0.5 text-[10px] text-[#16243A] font-normal"
+                      />
+                    ) : (
+                      notes.remarks[bucket] || (bucket >= 5 && impTeu(bucket, false) + impTeu(bucket, true) > 0 ? "LINE HOLD" : "")
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -1561,16 +1588,31 @@ function PendencySummaryTab({ site }: { site: import("@/lib/types").Site }) {
           <table className="text-[11.5px] border-collapse">
             <thead><tr><td className={HB} colSpan={2}>TOTAL PENDENCY</td></tr></thead>
             <tbody>
-              {([["EXPORT", tExp, true], ["IMPORT - NORMAL", tImpN, true], ["IMPORT - SCANNING", tImpS, false], ["CHECK PACKAGE", 0, false]] as [string, number, boolean][]).map(([k, v, red]) => (
+              {([["EXPORT", tExp, true], ["IMPORT - NORMAL", tImpN, true], ["IMPORT - SCANNING", tImpS, false]] as [string, number, boolean][]).map(([k, v, red]) => (
                 <tr key={k}>
                   <td className={`${H} text-left font-semibold`}>{k}</td>
                   <td className={`${H} font-mono font-bold ${red && v > 0 ? "bg-[#F8CFCF]" : ""}`}>{v}</td>
                 </tr>
               ))}
-              <tr><td className={`${HB} text-left`}>TOTAL</td><td className={`${HB} font-mono ${tExp + tImpN + tImpS > 0 ? "bg-[#C0392B]" : ""}`}>{tExp + tImpN + tImpS}</td></tr>
-              <tr><td className={`${H} text-left text-[#C0392B] font-bold`}>Terminal HOLD MICT</td><td className={`${H} font-mono`}>00 TEUs</td></tr>
-              <tr><td className={`${H} text-left font-semibold`}>EN-BLOCK LDD</td><td className={`${H} font-mono`}>00 Teus</td></tr>
-              <tr><td className={`${H} text-left font-semibold`}>EN-BLOCK MTY</td><td className={`${H} font-mono`}>00 Teus</td></tr>
+              <tr>
+                <td className={`${H} text-left font-semibold`}>CHECK PACKAGE</td>
+                <td className={`${H} font-mono font-bold`}>
+                  {edit ? <input type="number" value={nz.checkPackageTeu} onChange={(e) => setNz({ ...nz, checkPackageTeu: Number(e.target.value) || 0 })} className="w-16 border border-[#D8DEE7] rounded px-1 py-0.5 text-[11px]" /> : notes.checkPackageTeu}
+                </td>
+              </tr>
+              <tr><td className={`${HB} text-left`}>TOTAL</td><td className={`${HB} font-mono ${tExp + tImpN + tImpS + notes.checkPackageTeu > 0 ? "bg-[#C0392B]" : ""}`}>{tExp + tImpN + tImpS + notes.checkPackageTeu}</td></tr>
+              <tr>
+                <td className={`${H} text-left text-[#C0392B] font-bold`}>Terminal HOLD MICT</td>
+                <td className={`${H} font-mono`}>{edit ? <input value={nz.holds.terminalHoldMict} onChange={(e) => setNz({ ...nz, holds: { ...nz.holds, terminalHoldMict: e.target.value } })} className="w-16 border border-[#D8DEE7] rounded px-1 py-0.5 text-[11px]" /> : notes.holds.terminalHoldMict}</td>
+              </tr>
+              <tr>
+                <td className={`${H} text-left font-semibold`}>EN-BLOCK LDD</td>
+                <td className={`${H} font-mono`}>{edit ? <input value={nz.holds.enBlockLdd} onChange={(e) => setNz({ ...nz, holds: { ...nz.holds, enBlockLdd: e.target.value } })} className="w-16 border border-[#D8DEE7] rounded px-1 py-0.5 text-[11px]" /> : notes.holds.enBlockLdd}</td>
+              </tr>
+              <tr>
+                <td className={`${H} text-left font-semibold`}>EN-BLOCK MTY</td>
+                <td className={`${H} font-mono`}>{edit ? <input value={nz.holds.enBlockMty} onChange={(e) => setNz({ ...nz, holds: { ...nz.holds, enBlockMty: e.target.value } })} className="w-16 border border-[#D8DEE7] rounded px-1 py-0.5 text-[11px]" /> : notes.holds.enBlockMty}</td>
+              </tr>
             </tbody>
           </table>
 
@@ -1580,14 +1622,24 @@ function PendencySummaryTab({ site }: { site: import("@/lib/types").Site }) {
               <tr><td className={HG}>SEGMENT</td><td className={HG}>20</td><td className={HG}>40</td><td className={HG}>TEUS</td></tr>
             </thead>
             <tbody>
-              {["EXPORT - DOC", "EXPORT - BUFFER", "CHECK PACKAGE", "IMPORT"].map((seg) => (
-                <tr key={seg}>
-                  <td className={`${H} text-left font-semibold`}>{seg}</td>
-                  <td className={`${H} text-[#5C6B80]`}>—</td><td className={`${H} text-[#5C6B80]`}>—</td><td className={`${H} text-[#5C6B80]`}>—</td>
-                </tr>
-              ))}
-              <tr><td className={`${HB} text-left`}>TOTAL</td><td className={HB}>—</td><td className={HB}>—</td><td className={HB}>—</td></tr>
-              <tr><td className={`${H} text-left text-[10px] text-[#5C6B80]`} colSpan={4}>yard inventory feed not connected yet</td></tr>
+              {["EXPORT - DOC", "EXPORT - BUFFER", "CHECK PACKAGE", "IMPORT"].map((seg) => {
+                const y = notes.yard[seg] ?? { c20: 0, c40: 0 };
+                return (
+                  <tr key={seg}>
+                    <td className={`${H} text-left font-semibold`}>{seg}</td>
+                    <td className={`${H} font-mono`}>{edit ? <input type="number" value={(nz.yard[seg] ?? { c20: 0 }).c20} onChange={(e) => setNz({ ...nz, yard: { ...nz.yard, [seg]: { ...(nz.yard[seg] ?? { c20: 0, c40: 0 }), c20: Number(e.target.value) || 0 } } })} className="w-14 border border-[#D8DEE7] rounded px-1 py-0.5 text-[11px]" /> : (y.c20 || "—")}</td>
+                    <td className={`${H} font-mono`}>{edit ? <input type="number" value={(nz.yard[seg] ?? { c40: 0 }).c40} onChange={(e) => setNz({ ...nz, yard: { ...nz.yard, [seg]: { ...(nz.yard[seg] ?? { c20: 0, c40: 0 }), c40: Number(e.target.value) || 0 } } })} className="w-14 border border-[#D8DEE7] rounded px-1 py-0.5 text-[11px]" /> : (y.c40 || "—")}</td>
+                    <td className={`${H} font-mono font-semibold`}>{y.c20 + y.c40 * 2 || "—"}</td>
+                  </tr>
+                );
+              })}
+              <tr>
+                <td className={`${HB} text-left`}>TOTAL</td>
+                <td className={HB}>{Object.values(notes.yard).reduce((a, y) => a + y.c20, 0) || "—"}</td>
+                <td className={HB}>{Object.values(notes.yard).reduce((a, y) => a + y.c40, 0) || "—"}</td>
+                <td className={HB}>{Object.values(notes.yard).reduce((a, y) => a + y.c20 + y.c40 * 2, 0) || "—"}</td>
+              </tr>
+              <tr><td className={`${H} text-left text-[10px] text-[#5C6B80]`} colSpan={4}>{edit ? "enter counts from the yard team's tally" : "manual — click ✎ Edit manual to update"}</td></tr>
             </tbody>
           </table>
         </div>

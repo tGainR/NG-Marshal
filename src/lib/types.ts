@@ -237,6 +237,20 @@ export interface EquipmentLog {
   enteredAt: number;
 }
 
+// Manually-maintained parts of the Pendency Summary that have no data feed yet
+// (yard inventory, terminal holds, remarks, check-package). Editable in the summary
+// tab, persisted, so the live report matches the team's hand-kept Excel exactly.
+export interface YardSegment {
+  c20: number;
+  c40: number;
+}
+export interface SummaryNotes {
+  remarks: Record<number, string>; // import dwell bucket (0=TODAY … 6=7th+) → remark
+  yard: Record<string, YardSegment>; // "EXPORT - DOC" | "EXPORT - BUFFER" | "CHECK PACKAGE" | "IMPORT"
+  holds: { terminalHoldMict: string; enBlockLdd: string; enBlockMty: string };
+  checkPackageTeu: number; // CP total TEU (no feed → manual)
+}
+
 // ── Planning engine ─────────────────────────────────────────────────────
 // A "lane" is one plannable stream: a destination + movement type.
 // Rules are edited in the console (versioned + audited, like the rate card) — never in code.

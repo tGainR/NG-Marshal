@@ -1,4 +1,4 @@
-import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator, PlanRules, Supervisor } from "./types";
+import { Site, RateCard, Driver, Vehicle, Trip, Issue, HotJob, Equipment, Operator, PlanRules, Supervisor, SummaryNotes } from "./types";
 
 // ——— Mundra EXIM yard site profile ———
 // Destinations = the 4 container terminals + FTWZ (Free Trade Warehousing Zone, now live).
@@ -50,6 +50,18 @@ export const PLAN_RULES: PlanRules = {
   tripEquity: true,
   minimiseChurn: true,
   respectPreferences: true,
+};
+
+export const DEFAULT_SUMMARY_NOTES: SummaryNotes = {
+  remarks: {},
+  yard: {
+    "EXPORT - DOC": { c20: 0, c40: 0 },
+    "EXPORT - BUFFER": { c20: 0, c40: 0 },
+    "CHECK PACKAGE": { c20: 0, c40: 0 },
+    "IMPORT": { c20: 0, c40: 0 },
+  },
+  holds: { terminalHoldMict: "00 TEUs", enBlockLdd: "00 Teus", enBlockMty: "00 Teus" },
+  checkPackageTeu: 0,
 };
 
 export const RATE_CARD: RateCard = {
