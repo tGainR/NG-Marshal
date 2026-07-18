@@ -13,7 +13,7 @@ const ROLES = [
     href: "/console",
     tag: "WEB CONSOLE",
     title: "Command Center",
-    desc: "Live board, planning & imports, incentive ledger, issues, reports",
+    desc: "Live board, pendency summary, planning, incentive ledger, issues",
     cta: "Open console",
     accent: true,
   },
@@ -36,8 +36,8 @@ const ROLES = [
   {
     href: "/console?tab=planning",
     tag: "DOCS / DATA",
-    title: "Imports & Planning",
-    desc: "Pendency & cutoff files, ITV assignment board, auto-forward feed",
+    title: "Planning & Uploads",
+    desc: "Upload pendency / cutoff files, ITV assignment board, auto-forward feed",
     cta: "Open planning",
     accent: false,
   },
@@ -68,7 +68,7 @@ const ROLES = [
 ];
 
 const FEATURES = [
-  { icon: "📥", t: "Three-channel ingestion", d: "Auto-forwarded emails, file/photo import, audited manual entry — pendency, cutoffs and masters refresh on a regular cadence." },
+  { icon: "📥", t: "Three-channel ingestion", d: "Auto-forwarded emails, file upload, audited manual entry — pendency, cutoffs and masters refresh on a regular cadence." },
   { icon: "🗺️", t: "Live pendency vs deployment", d: "Terminal-wise pending TEUs, aging and scan streams beside the ITVs you've actually assigned — gaps show red." },
   { icon: "🚚", t: "Pick-and-send assignment", d: "Assign the actual ITV to terminal × movement from a global multi-vendor pool with eligibility tags and driver notes." },
   { icon: "✅", t: "Verified trips", d: "GPS cycle + terminal ticket OCR + yard record — a trip only counts when the three agree. No TOS access needed." },

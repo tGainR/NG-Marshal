@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp, RATE_CARD, SITE, SHIFT, HOT_JOBS } from "@/lib/store";
 import { DEPLOYMENT } from "@/lib/seed";
 import { fmtClock, fmtInr } from "@/lib/incentive";
@@ -57,7 +57,6 @@ export default function ConsolePage() {
     }[];
   } | null>(null);
   const [siteMenu, setSiteMenu] = useState(false);
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
@@ -219,19 +218,6 @@ Current Pendency:${pendencyNow}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }}
-            />
-            <button
-              onClick={() => importInputRef.current?.click()}
-              className="bg-[#E8641B] text-white text-xs font-bold px-3.5 py-2 rounded-md flex items-center gap-1.5"
-            >
-              ⬆ Import file
-            </button>
             <button
               onClick={() => { setReportOpen(true); setCopied(false); }}
               className="bg-[#1E9E5A] text-white text-xs font-bold px-3.5 py-2 rounded-md"
@@ -278,7 +264,7 @@ Current Pendency:${pendencyNow}
                 tab === t ? "bg-[#1F3864] text-white border-[#1F3864]" : "bg-white text-[#5C6B80] border-[#D8DEE7]"
               }`}
             >
-              {t === "live" ? "Live board" : t === "summary" ? "Pendency summary" : t === "planning" ? "Planning & imports" : t === "incentives" ? "Incentive ledger" : t === "masters" ? "Masters & settings" : t === "equipment" ? "Equipment" : `Issues (${openIssues.length})`}
+              {t === "live" ? "Live board" : t === "summary" ? "Pendency summary" : t === "planning" ? "Planning & uploads" : t === "incentives" ? "Incentive ledger" : t === "masters" ? "Masters & settings" : t === "equipment" ? "Equipment" : `Issues (${openIssues.length})`}
             </button>
           ))}
         </div>
@@ -409,11 +395,76 @@ Current Pendency:${pendencyNow}
             <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
             <div>
-              <p className="font-bold text-[15px] flex items-center gap-2">⬆ Import pendency, cutoff or master file</p>
-              <p className="text-[12px] text-[#C9D4E6] mt-0.5">Drag a file here, or click — import pendency · export cutoff · ITV / driver master. Type auto-detected.</p>
+              <p className="font-bold text-[15px] flex items-center gap-2">⬆ Upload a data file</p>
+              <p className="text-[12px] text-[#C9D4E6] mt-0.5">
+                Drag here or click — <b>import pendency</b> · <b>export cutoff</b> · ITV master · driver master. File type detected automatically.
+              </p>
             </div>
             <span className="bg-[#E8641B] text-white text-[13px] font-bold px-4 py-2 rounded-lg whitespace-nowrap">Choose file →</span>
           </label>
+        )}
+        {tab === "planning" && importPreview && (
+          <div className="bg-white border-2 border-[#E8641B] rounded-xl p-4 mt-4 text-[12px] flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-bold font-mono text-[12px]">📄 {importPreview.fileName}</p>
+              {importPreview.results.filter((r) => r.kind === "container_pool").length > 1 && (
+                <button
+                  onClick={() => {
+                    const all = importPreview.results.filter((r) => r.kind === "container_pool").flatMap((r) => r.containers);
+                    dispatch({ type: "importContainers", list: all, source: `${importPreview.fileName} (all sheets)` });
+                    setImportPreview(null);
+                  }}
+                  className="text-[11px] font-bold text-white bg-[#1F3864] rounded px-3 py-1.5"
+                >
+                  Load ALL sheets together ▸
+                </button>
+              )}
+            </div>
+            {importPreview.results.map((r, i) => {
+              const dir = r.containers[0]?.direction;
+              const what =
+                r.kind === "container_pool" ? (dir === "export" ? "EXPORT cutoff list" : "IMPORT pendency list")
+                : r.kind === "itv_master" ? "ITV master"
+                : r.kind === "driver_master" ? "Driver master"
+                : "not recognised";
+              return (
+                <div key={i} className="border-t border-[#EDF0F5] pt-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      Sheet <b className="font-mono">{r.sheet}</b> → <b>{what}</b>
+                      {r.kind === "container_pool" && <> · {r.containers.length} containers · {r.containers.length ? Math.round((r.containers.filter((c) => c.valid).length / r.containers.length) * 100) : 0}% valid container numbers</>}
+                      {r.kind === "itv_master" && <> · {r.vehicles.length} ITVs</>}
+                      {r.kind === "driver_master" && <> · {r.drivers.length} drivers</>}
+                    </span>
+                    {r.kind !== "unknown" && (
+                      <button
+                        onClick={() => {
+                          if (r.kind === "container_pool") dispatch({ type: "importContainers", list: r.containers, source: importPreview.fileName });
+                          if (r.kind === "itv_master") dispatch({ type: "importVehicles", list: r.vehicles });
+                          if (r.kind === "driver_master") dispatch({ type: "importDrivers", list: r.drivers });
+                          setImportPreview(null);
+                        }}
+                        className="text-[11px] font-bold text-white bg-[#1E9E5A] rounded px-3 py-1.5"
+                      >
+                        Load into system ▸
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto mt-1.5">
+                    <table className="text-[10.5px] font-mono whitespace-nowrap">
+                      <tbody>
+                        <tr>{r.headers.slice(0, 8).map((h, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5 font-bold bg-[#F6F8FB]">{h || "—"}</td>)}</tr>
+                        {r.sample.map((row, k) => (
+                          <tr key={k}>{row.slice(0, 8).map((c, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5">{c || "—"}</td>)}</tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+            <button onClick={() => setImportPreview(null)} className="text-[11px] text-[#5C6B80] self-start">Cancel</button>
+          </div>
         )}
         {tab === "summary" && <PendencySummaryTab site={site} />}
         {tab === "planning" && <PendencyPanel site={site} />}
@@ -537,96 +588,29 @@ Current Pendency:${pendencyNow}
             </div>
             <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 flex flex-col gap-3">
               <div className="flex flex-wrap justify-between items-center gap-2">
-                <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Imports · real files (Excel / CSV)</p>
+                <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">How data arrives</p>
                 <span className="text-[10.5px] font-bold text-[#177A47] bg-[#E3F4EB] rounded-full px-2.5 py-1">
-                  Pool: {state.pool.filter((c) => (c.direction ?? "import") === "import").length} import · {state.pool.filter((c) => c.direction === "export").length} export
+                  In system: {state.pool.filter((c) => (c.direction ?? "import") === "import").length} import · {state.pool.filter((c) => c.direction === "export").length} export containers
                 </span>
               </div>
-              <label className="border-2 border-dashed border-[#C9D4E4] rounded-lg px-3.5 py-5 text-center text-[12.5px] cursor-pointer hover:bg-[#F6F8FB]">
-                <span className="font-bold text-[#1F3864]">⇪ Drop / choose a file</span>
-                <span className="block text-[11px] text-[#5C6B80] mt-1">
-                  3-hr import pendency · export cutoff · ITV master · driver master — type auto-detected
-                </span>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }}
-                />
-              </label>
-              {importPreview && (
-                <div className="border border-[#D8DEE7] rounded-lg p-3 flex flex-col gap-2 text-[12px]">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-bold font-mono text-[11.5px]">{importPreview.fileName}</p>
-                    {importPreview.results.filter((r) => r.kind === "container_pool").length > 1 && (
-                      <button
-                        onClick={() => {
-                          const all = importPreview.results.filter((r) => r.kind === "container_pool").flatMap((r) => r.containers);
-                          dispatch({ type: "importContainers", list: all, source: `${importPreview.fileName} (all sheets)` });
-                          setImportPreview(null);
-                        }}
-                        className="text-[11px] font-bold text-white bg-[#1F3864] rounded px-3 py-1.5"
-                      >
-                        Import ALL container sheets together ▸
-                      </button>
-                    )}
-                  </div>
-                  {importPreview.results.map((r, i) => (
-                    <div key={i} className="border-t border-[#EDF0F5] pt-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span>
-                          Sheet <b className="font-mono">{r.sheet}</b> → detected{" "}
-                          <b className="capitalize">{r.kind.replace("_", " ")}</b>
-                          {r.kind === "container_pool" && <> · {r.containers.length} containers · {r.containers.length ? Math.round((r.containers.filter((c) => c.valid).length / r.containers.length) * 100) : 0}% check-digit valid</>}
-                          {r.kind === "itv_master" && <> · {r.vehicles.length} ITVs</>}
-                          {r.kind === "driver_master" && <> · {r.drivers.length} drivers</>}
-                        </span>
-                        {r.kind !== "unknown" && (
-                          <button
-                            onClick={() => {
-                              if (r.kind === "container_pool") dispatch({ type: "importContainers", list: r.containers, source: importPreview.fileName });
-                              if (r.kind === "itv_master") dispatch({ type: "importVehicles", list: r.vehicles });
-                              if (r.kind === "driver_master") dispatch({ type: "importDrivers", list: r.drivers });
-                              setImportPreview(null);
-                            }}
-                            className="text-[10.5px] font-bold text-white bg-[#1E9E5A] rounded px-2.5 py-1"
-                          >
-                            Import ▸
-                          </button>
-                        )}
-                      </div>
-                      <div className="overflow-x-auto mt-1.5">
-                        <table className="text-[10.5px] font-mono whitespace-nowrap">
-                          <tbody>
-                            <tr>{r.headers.slice(0, 8).map((h, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5 font-bold bg-[#F6F8FB]">{h || "—"}</td>)}</tr>
-                            {r.sample.map((row, k) => (
-                              <tr key={k}>{row.slice(0, 8).map((c, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5">{c || "—"}</td>)}</tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={() => setImportPreview(null)} className="text-[11px] text-[#5C6B80] self-start">Dismiss</button>
-                </div>
-              )}
               <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
-                <div className="border border-[#D8DEE7] rounded-lg py-2 px-1.5">
+                <div className="border border-[#D8DEE7] rounded-lg py-2.5 px-1.5">
                   <p className="font-bold text-[#177A47]">✉ Auto-forward</p>
                   <p className="text-[#5C6B80] font-mono text-[10px] mt-0.5">mundra@itv.app</p>
-                  <p className="text-[10px] text-[#177A47] mt-0.5">active · parsed on arrival</p>
+                  <p className="text-[10px] text-[#177A47] mt-0.5">parsed on arrival</p>
                 </div>
-                <button className="border border-[#D8DEE7] rounded-lg py-2 px-1.5">
-                  <p className="font-bold text-[#1F3864]">⇪ Import</p>
-                  <p className="text-[#5C6B80] text-[10px] mt-0.5">Excel / CSV / photo OCR</p>
-                </button>
-                <button className="border border-[#D8DEE7] rounded-lg py-2 px-1.5">
+                <div className="border border-[#D8DEE7] rounded-lg py-2.5 px-1.5 bg-[#F6F8FB]">
+                  <p className="font-bold text-[#1F3864]">⬆ Upload</p>
+                  <p className="text-[#5C6B80] text-[10px] mt-0.5">Excel / CSV</p>
+                  <p className="text-[10px] text-[#1F3864] mt-0.5">use the blue bar above</p>
+                </div>
+                <div className="border border-[#D8DEE7] rounded-lg py-2.5 px-1.5">
                   <p className="font-bold text-[#8A6100]">✎ Manual entry</p>
                   <p className="text-[#5C6B80] text-[10px] mt-0.5">stamped who/when/why</p>
-                </button>
+                </div>
               </div>
               <p className="text-[11px] text-[#5C6B80]">
-                Three channels, every input — no dependency on a single one. Manual entries are flagged and land in the daily manual-entries reconciliation report.
+                Three channels, no dependency on a single one. <b>Upload</b> = putting a file in; <b>import / export</b> = the cargo direction inside it.
               </p>
             </div>
           </div>

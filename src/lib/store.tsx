@@ -555,7 +555,7 @@ function reducer(s: AppState, a: Action): AppState {
       const seen = new Set<string>();
       const fresh = a.list.filter((c) => (seen.has(c.containerNo) ? false : (seen.add(c.containerNo), true)));
       const pool = [...s.pool.filter((c) => (c.direction ?? "import") !== dir), ...fresh];
-      return { ...s, pool, toast: `${dir === "export" ? "Export" : "Import"} pool updated: ${fresh.length} containers from ${a.source}` };
+      return { ...s, pool, toast: `Loaded ${fresh.length} ${dir === "export" ? "EXPORT" : "IMPORT"} containers from ${a.source}` };
     }
 
     case "importVehicles": {
@@ -571,7 +571,7 @@ function reducer(s: AppState, a: Action): AppState {
           added++;
         }
       });
-      return { ...s, vehicles, toast: `ITV master: ${added} added, ${updated} updated` };
+      return { ...s, vehicles, toast: `ITV master loaded: ${added} added, ${updated} updated` };
     }
 
     case "importDrivers": {
@@ -593,7 +593,7 @@ function reducer(s: AppState, a: Action): AppState {
           if (vi >= 0) vehicles[vi] = { ...vehicles[vi], driverId: id };
         }
       });
-      return { ...s, drivers, vehicles, toast: `Drivers: ${added} added, ${updated} updated` };
+      return { ...s, drivers, vehicles, toast: `Driver master loaded: ${added} added, ${updated} updated` };
     }
 
     case "upsertVendor": {
