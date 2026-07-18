@@ -10,7 +10,7 @@ import {
 } from "./seed";
 import { buildPlan, pickForQuickAllocate } from "./planner";
 import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
-import { ImportedContainer, ImportedDriver, ImportedVehicle } from "./importer";
+import { ImportedContainer, ImportedDriver, ImportedVehicle, reconcilePool } from "./importer";
 
 export interface AppState {
   now: number; // sim seconds since load
@@ -549,13 +549,13 @@ function reducer(s: AppState, a: Action): AppState {
     }
 
     case "importContainers": {
-      // refresh semantics PER DIRECTION: a new import file replaces the import pool,
-      // a new export file replaces the export pool — they never clobber each other
+      // RECONCILE, never overwrite. Each file is a snapshot of what is pending NOW
+      // for that direction: new rows added, known rows updated in place (deduped),
+      // rows missing from the newest file marked "cleared" and kept as history.
       const dir = a.list[0]?.direction ?? "import";
-      const seen = new Set<string>();
-      const fresh = a.list.filter((c) => (seen.has(c.containerNo) ? false : (seen.add(c.containerNo), true)));
-      const pool = [...s.pool.filter((c) => (c.direction ?? "import") !== dir), ...fresh];
-      return { ...s, pool, toast: `Loaded ${fresh.length} ${dir === "export" ? "EXPORT" : "IMPORT"} containers from ${a.source}` };
+      const { pool, added, updated, cleared } = reconcilePool(s.pool, a.list, dir, a.source, s.now);
+      const label = dir === "export" ? "EXPORT" : "IMPORT";
+      return { ...s, pool, toast: `${label} ${a.source}: +${added} new · ${updated} updated · ${cleared} cleared` };
     }
 
     case "importVehicles": {

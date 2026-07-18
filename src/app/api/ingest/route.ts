@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { parseBuffer, guessKind, extractContainers, ImportedContainer } from "@/lib/importer";
+import { parseBuffer, guessKind, extractContainers, ImportedContainer, reconcilePool } from "@/lib/importer";
 
 const SITE_ID = "mundra-exim";
 
@@ -62,9 +62,8 @@ export async function POST(req: NextRequest) {
     const { data } = await sb.from("site_state").select("rev,state").eq("site_id", SITE_ID).maybeSingle();
     if (!data) return NextResponse.json({ error: "no site snapshot yet — open the console once in supabase mode" }, { status: 409 });
     const state = data.state as { pool?: ImportedContainer[] } & Record<string, unknown>;
-    const seen = new Set<string>();
-    const fresh = containers.filter((c) => (seen.has(c.containerNo) ? false : (seen.add(c.containerNo), true)));
-    const pool = [...(state.pool ?? []).filter((c) => (c.direction ?? "import") !== direction), ...fresh];
+    // same reconciliation the console uses: additive, deduped, cleared-marking
+    const { pool, added, updated, cleared } = reconcilePool(state.pool ?? [], containers, direction, filename, Date.now() / 1000);
     const next = { ...state, pool };
     const { data: upd } = await sb
       .from("site_state")
@@ -73,7 +72,7 @@ export async function POST(req: NextRequest) {
       .eq("rev", data.rev)
       .select("rev");
     if (upd && upd.length > 0) {
-      return NextResponse.json({ stored: true, filename, direction, containers: fresh.length, validPct, rev: Number(data.rev) + 1 });
+      return NextResponse.json({ stored: true, filename, direction, containers: containers.length, added, updated, cleared, validPct, rev: Number(data.rev) + 1 });
     }
     // rev conflict (a console user wrote concurrently) → retry
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { livePool } from "@/lib/importer";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -96,8 +97,9 @@ export default function Home() {
   const running = 60 + state.vehicles.filter((v) => v.status === "running").length;
   const completed = state.trips.filter((t) => t.state === "completed");
   const liveTeu = SHIFT.teuDoneBase + completed.filter((t) => t.id >= 1000).reduce((a, t) => a + t.teu, 0);
-  const poolImp = state.pool.filter((c) => (c.direction ?? "import") === "import").length;
-  const poolExp = state.pool.filter((c) => c.direction === "export").length;
+  const live = livePool(state.pool);
+  const poolImp = live.filter((c) => (c.direction ?? "import") === "import").length;
+  const poolExp = live.filter((c) => c.direction === "export").length;
   const openIssues = state.issues.filter((i) => i.status !== "resolved").length;
   const paidToday = state.trips.reduce((a, t) => a + (t.earnings?.total ?? 0), 0);
   const equipRunning = state.equipment.filter((e) => e.status === "running").length;

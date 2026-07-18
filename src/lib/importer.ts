@@ -24,6 +24,74 @@ export interface ImportedContainer {
   pendencyHrs?: number; // aging
   party?: string; // ADLL / AMTE
   valid: boolean; // ISO 6346 check digit
+  // ── lifecycle (set by reconciliation, not by the parser) ──
+  // Each uploaded pendency file is a SNAPSHOT of what is currently pending.
+  // We never blind-overwrite: new rows are added, existing rows updated in place,
+  // and rows absent from the newest file are marked "cleared" (they moved) and kept
+  // for history — so the pool is incremental with duplicates merged, not replaced.
+  status?: "pending" | "cleared";
+  clearedAt?: number; // sim-seconds when it disappeared from the feed
+  firstSeenFile?: string;
+  lastSeenFile?: string;
+}
+
+export interface ReconcileResult {
+  pool: ImportedContainer[];
+  added: number;
+  updated: number;
+  cleared: number;
+}
+
+/**
+ * Merge a newly uploaded snapshot into the existing pool, for ONE direction.
+ * Additive, deduped, status-driven: new rows added, known rows updated in place
+ * (keeping first-seen), rows absent from the snapshot marked cleared and kept as
+ * history (capped). The other direction's rows are passed through untouched.
+ */
+export function reconcilePool(
+  prevPool: ImportedContainer[],
+  incomingRows: ImportedContainer[],
+  direction: "import" | "export",
+  source: string,
+  now: number,
+  historyCap = 2000,
+): ReconcileResult {
+  const incoming = new Map<string, ImportedContainer>();
+  incomingRows.forEach((c) => incoming.set(c.containerNo, c)); // last row wins → duplicates removed
+  const existing = new Map(
+    prevPool.filter((c) => (c.direction ?? "import") === direction).map((c) => [c.containerNo, c] as const),
+  );
+  let added = 0, updated = 0, cleared = 0;
+  const merged: ImportedContainer[] = [];
+
+  incoming.forEach((row, no) => {
+    const prev = existing.get(no);
+    if (prev) {
+      updated++;
+      merged.push({ ...prev, ...row, status: "pending", clearedAt: undefined, firstSeenFile: prev.firstSeenFile ?? source, lastSeenFile: source });
+    } else {
+      added++;
+      merged.push({ ...row, status: "pending", firstSeenFile: source, lastSeenFile: source });
+    }
+  });
+  existing.forEach((prev, no) => {
+    if (incoming.has(no)) return;
+    if (prev.status === "cleared") { merged.push(prev); return; } // already gone
+    cleared++;
+    merged.push({ ...prev, status: "cleared", clearedAt: now });
+  });
+
+  const keep = new Set(
+    merged.filter((c) => c.status === "cleared").sort((x, y) => (y.clearedAt ?? 0) - (x.clearedAt ?? 0)).slice(0, historyCap),
+  );
+  const dirPool = merged.filter((c) => c.status !== "cleared" || keep.has(c));
+  const pool = [...prevPool.filter((c) => (c.direction ?? "import") !== direction), ...dirPool];
+  return { pool, added, updated, cleared };
+}
+
+/** Containers still pending — the only ones that count towards pendency. */
+export function livePool<T extends { status?: "pending" | "cleared" }>(pool: T[]): T[] {
+  return pool.filter((c) => c.status !== "cleared");
 }
 
 export interface ImportedVehicle {
