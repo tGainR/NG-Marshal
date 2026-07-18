@@ -112,6 +112,11 @@ export interface Assignment {
   target: string; // terminal or SCAN
   purpose: MovementType;
   pickup?: string; // EXIM-1 / EXIM-2 for exports
+  // Commitment level, as terminal operating systems distinguish it: auto-plan and
+  // quick-allocate produce TENTATIVE assignments the planner can still sweep away;
+  // once CONFIRMED, the planner has committed and auto-plan will not touch it.
+  commit?: "tentative" | "confirmed";
+  note?: string;
 }
 
 export interface Vehicle {

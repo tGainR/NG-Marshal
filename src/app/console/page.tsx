@@ -6,19 +6,23 @@ import { useApp, RATE_CARD, SITE, SHIFT, HOT_JOBS } from "@/lib/store";
 import { DEPLOYMENT } from "@/lib/seed";
 import { fmtClock, fmtInr } from "@/lib/incentive";
 import { parseSheetDateMs, livePool } from "@/lib/importer";
+import YardTab from "./YardTab";
+import ItvPlannerTab from "./ItvPlannerTab";
 import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, MOVEMENT_LABEL, VehicleStatus } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
 
-// FIVE surfaces, each with one job. Summary is the default — it is the report
-// the team already reads, so the console opens on something familiar.
-type Tab = "summary" | "planning" | "live" | "incentives" | "setup";
+// Six surfaces, each named for a VERB — the split that terminal operating systems
+// use, and the one that was missing before: PLAN (intent) and DISPATCH (which ITV
+// goes where) are different jobs and belong on different screens.
+type Tab = "summary" | "yard" | "planning" | "itv" | "live" | "setup";
 
 const TABS: { id: Tab; label: string; purpose: string }[] = [
-  { id: "summary",    label: "Pendency summary", purpose: "The EXIM PENDENCY REPORT in your Excel format — live. Read it, edit the manual cells, print it." },
-  { id: "planning",   label: "Planning",         purpose: "Decide where the ITVs go: pendency vs deployed, quick allocate, auto-plan, assignment board." },
-  { id: "live",       label: "Live board",       purpose: "What is happening right now: fleet status, trips, deployment, and the open issue queue." },
-  { id: "incentives", label: "Incentives",       purpose: "Per-driver earnings this shift, the ledger, and shift approvals." },
-  { id: "setup",      label: "Setup",            purpose: "Masters (vendors, ITVs, drivers), equipment & operators, rate card, planning rules." },
+  { id: "summary",  label: "Summary",     purpose: "READ — the EXIM PENDENCY REPORT in your Excel format, live. Read it, edit the manual cells, print it." },
+  { id: "yard",     label: "Yard",        purpose: "SEE — block-wise map of where the containers actually are. Colour it by ageing, direction, flags or fill." },
+  { id: "planning", label: "Plan",        purpose: "DECIDE — how much work is waiting per destination, what each lane should get, and the rules behind it. No ITV named here." },
+  { id: "itv",      label: "ITV Planner", purpose: "ASSIGN — one row per ITV: send it where. Work queues on top, the fleet below, tentative until you confirm." },
+  { id: "live",     label: "Live",        purpose: "MONITOR — what is happening right now: trips in flight, fleet status, and the open issue queue." },
+  { id: "setup",    label: "Setup",       purpose: "CONFIGURE — masters (vendors, ITVs, drivers), equipment & operators, rate card, incentives, planning rules." },
 ];
 
 const STATUS_STYLE: Record<VehicleStatus, { label: string; cls: string }> = {
@@ -72,7 +76,8 @@ export default function ConsolePage() {
     const t = new URLSearchParams(window.location.search).get("tab");
     if (TABS.some((x) => x.id === t)) setTab(t as Tab);
     else if (t === "issues") setTab("live");
-    else if (t === "masters" || t === "equipment") setTab("setup");
+    else if (t === "masters" || t === "equipment" || t === "incentives") setTab("setup");
+    else if (t === "dispatch" || t === "planner") setTab("itv");
   }, []);
 
   const site = state.sites.find((x) => x.id === state.activeSiteId) ?? SITE;
@@ -481,6 +486,8 @@ Current Pendency:${pendencyNow}
           </div>
         )}
         {tab === "summary" && <PendencySummaryTab site={site} />}
+        {tab === "yard" && <YardTab />}
+        {tab === "itv" && <ItvPlannerTab site={site} />}
         {tab === "planning" && <PendencyPanel site={site} />}
         {/* QUICK ALLOCATE + AUTO-PLAN */}
         {tab === "planning" && <QuickAllocateBar />}
@@ -631,7 +638,7 @@ Current Pendency:${pendencyNow}
         )}
 
         {/* INCENTIVES */}
-        {tab === "incentives" && (
+        {tab === "setup" && (
           <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4 overflow-x-auto">
             <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
               <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">
@@ -1250,118 +1257,122 @@ function ProposalPanel() {
 // and must never sit at the same level. Hierarchy here:
 //   Total pendency → split by direction → then location-wise within that direction.
 // Scanning / check-package are MOVEMENTS, not locations — shown separately below.
+// ── Demand board — destination-wise, with import and export shown SIDE BY SIDE ──
+// Three independent axes, kept independent (the mistake to avoid is flattening them
+// into one row of tiles):
+//   WHERE      — the destination terminal
+//   WHICH WAY  — import vs export, split inside each destination
+//   WHAT BLOCKS IT — scanning / check package / ODC. These are NOT destinations;
+//                    they are prerequisites a box must clear before it can leave, so
+//                    they show as a status band and as flags on the tiles. A scanning
+//                    box still counts in its terminal's import figure — no double count.
 function PendencyPanel({ site }: { site: import("@/lib/types").Site }) {
   const { state } = useApp();
-  const [dir, setDir] = useState<"import" | "export">("import");
+  const pool = livePool(state.pool);
+  const imports = pool.filter((c) => (c.direction ?? "import") === "import");
+  const exports_ = pool.filter((c) => c.direction === "export");
+  const teuOf = (rows: typeof pool) => rows.reduce((a, c) => a + c.teu, 0);
 
-  const imports = livePool(state.pool).filter((c) => (c.direction ?? "import") === "import");
-  const exports_ = livePool(state.pool).filter((c) => c.direction === "export");
-  const teuOf = (rows: typeof state.pool) => rows.reduce((a, c) => a + c.teu, 0);
+  const isCP = (c: (typeof pool)[number]) => /CHECK|CP\b|PACKAGE/i.test(c.category ?? "");
+  const scanRows = pool.filter((c) => c.scan);
+  const cpRows = pool.filter(isCP);
+  const odcRows = pool.filter((c) => c.category === "ODC");
+  const agedRows = pool.filter((c) => (c.pendencyHrs ?? 0) >= 48);
 
-  const impTeu = teuOf(imports);
-  const expTeu = teuOf(exports_);
-  const scanRows = imports.filter((c) => c.scan);
-  const scanTeu = teuOf(scanRows);
-  const totalTeu = impTeu + expTeu;
+  const itvsAt = (destId: string, purpose: string) =>
+    Object.values(state.assignments).filter((a) => a.target === destId && a.purpose === purpose).length;
 
-  const rowsFor = (dest: { id: string; kind: string }) => {
-    if (dest.kind === "ftwz") return [];
-    return dir === "import"
-      ? imports.filter((c) => c.terminal === dest.id && !c.scan)
-      : exports_.filter((c) => c.terminal === dest.id);
+  const Half = ({ label, rows, itvs, tone }: { label: string; rows: typeof pool; itvs: number; tone: string }) => {
+    const teu = teuOf(rows);
+    const starved = teu > 0 && itvs === 0;
+    return (
+      <div className="flex-1 px-2.5 py-2">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[9.5px] font-bold uppercase tracking-[0.09em]" style={{ color: tone }}>{label}</span>
+          <span className={`text-[10px] font-bold ${starved ? "text-[#C0392B]" : itvs ? "text-[#177A47]" : "text-[#96A2B4]"}`}>{itvs} ITV</span>
+        </div>
+        <p className="text-[19px] font-extrabold tabular-nums leading-tight">{teu}<span className="text-[9.5px] font-semibold text-[#5C6B80] ml-1">TEU</span></p>
+        <p className="text-[10px] text-[#5C6B80] font-mono leading-tight">
+          {rows.length} ctr
+          {rows.filter((c) => c.scan).length > 0 && <> · 🔍{rows.filter((c) => c.scan).length}</>}
+          {rows.filter(isCP).length > 0 && <> · 📦{rows.filter(isCP).length}</>}
+        </p>
+      </div>
+    );
   };
-  const itvsAt = (dest: { id: string; kind: string }) =>
-    Object.values(state.assignments).filter((a) =>
-      dest.kind === "ftwz" ? a.purpose === "ftwz" || a.target === dest.id : a.target === dest.id && a.purpose === dir
-    ).length;
-
-  const movementItvs = (purpose: string) => Object.values(state.assignments).filter((a) => a.purpose === purpose).length;
-
-  const Chip = ({ on, onClick, label, value }: { on: boolean; onClick: () => void; label: string; value: string }) => (
-    <button
-      onClick={onClick}
-      className={`px-3.5 py-2 rounded-lg border text-left transition-colors ${
-        on ? "bg-[#1F3864] border-[#1F3864] text-white" : "bg-white border-[#D8DEE7] text-[#16243A] hover:border-[#1F3864]"
-      }`}
-    >
-      <span className={`block text-[9.5px] font-bold tracking-[0.1em] uppercase ${on ? "text-[#B9C6DE]" : "text-[#5C6B80]"}`}>{label}</span>
-      <span className="block text-[17px] font-extrabold tabular-nums leading-tight">{value}</span>
-    </button>
-  );
 
   return (
     <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4">
-      {/* Level 1 — total, then direction */}
-      <div className="flex flex-wrap items-center gap-2.5 mb-4">
-        <div className="pr-3.5 mr-1 border-r border-[#D8DEE7]">
+      {/* level 1 — the totals */}
+      <div className="flex flex-wrap items-center gap-5 mb-4">
+        <div>
           <p className="text-[9.5px] font-bold tracking-[0.1em] uppercase text-[#5C6B80]">Total pendency</p>
           <p className="text-[26px] font-extrabold tabular-nums leading-tight">
-            {totalTeu.toLocaleString("en-IN")} <span className="text-[11px] font-semibold text-[#5C6B80]">TEU</span>
+            {(teuOf(imports) + teuOf(exports_)).toLocaleString("en-IN")} <span className="text-[11px] font-semibold text-[#5C6B80]">TEU</span>
           </p>
         </div>
-        <Chip on={dir === "import"} onClick={() => setDir("import")} label="Import" value={`${impTeu.toLocaleString("en-IN")} TEU`} />
-        <Chip on={dir === "export"} onClick={() => setDir("export")} label="Export" value={`${expTeu.toLocaleString("en-IN")} TEU`} />
-        <span className="text-[11px] text-[#5C6B80] ml-1">
-          {dir === "import" ? `${imports.length} containers` : `${exports_.length} containers`} · click to switch view
-        </span>
+        <div className="pl-5 border-l border-[#D8DEE7]">
+          <p className="text-[9.5px] font-bold tracking-[0.1em] uppercase text-[#1F3864]">Import</p>
+          <p className="text-[20px] font-extrabold tabular-nums leading-tight">{teuOf(imports).toLocaleString("en-IN")}</p>
+          <p className="text-[10.5px] text-[#5C6B80]">{imports.length} containers</p>
+        </div>
+        <div>
+          <p className="text-[9.5px] font-bold tracking-[0.1em] uppercase text-[#177A47]">Export</p>
+          <p className="text-[20px] font-extrabold tabular-nums leading-tight">{teuOf(exports_).toLocaleString("en-IN")}</p>
+          <p className="text-[10.5px] text-[#5C6B80]">{exports_.length} containers</p>
+        </div>
       </div>
 
-      {/* Level 2 — location-wise, WITHIN the chosen direction */}
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">
-          {dir === "import" ? "Import" : "Export"} pendency by location
-        </p>
-        <span className="text-[10.5px] text-[#5C6B80]">Red = pending with no ITV on this movement</span>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      {/* level 2 — destination-wise, both directions at once */}
+      <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-2">
+        Pendency by destination <span className="font-medium normal-case tracking-normal">· import and export side by side · red = waiting with no ITV on it</span>
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
         {site.destinations.map((dest) => {
-          const rows = rowsFor(dest);
-          const teus = teuOf(rows);
-          const oldest = rows.reduce((a, c) => Math.max(a, c.pendencyHrs ?? 0), 0);
-          const odc = rows.filter((c) => c.category === "ODC").length;
-          const itvs = itvsAt(dest);
-          const isFtwz = dest.kind === "ftwz";
-          const hot = teus > 0 && itvs === 0;
+          const imp = imports.filter((c) => c.terminal === dest.id);
+          const exp = exports_.filter((c) => c.terminal === dest.id);
+          const noFeed = dest.kind === "ftwz";
+          const starved = (teuOf(imp) > 0 && itvsAt(dest.id, "import") === 0) || (teuOf(exp) > 0 && itvsAt(dest.id, "export") === 0);
           return (
-            <div key={dest.id} className={`border rounded-lg px-3 py-2.5 ${hot ? "border-[#D64545] bg-[#FDF6F6]" : isFtwz ? "border-[#E8641B]/40 bg-[#FFF7F1]" : "border-[#D8DEE7]"}`}>
-              <div className="flex justify-between items-baseline">
-                <span className="font-mono font-bold text-[13px]">{dest.label}</span>
-                <span className={`text-[10px] font-bold ${hot ? "text-[#A83232]" : "text-[#177A47]"}`}>{itvs} ITV</span>
+            <div key={dest.id} className={`border rounded-lg overflow-hidden ${starved ? "border-[#D64545]" : noFeed ? "border-[#E8641B]/40" : "border-[#D8DEE7]"}`}>
+              <div className="flex items-baseline justify-between px-2.5 py-1.5 bg-[#F6F8FB] border-b border-[#EDF0F5]">
+                <span className="font-mono font-extrabold text-[13px]">{dest.label}</span>
+                <span className="text-[9.5px] uppercase tracking-[0.08em] text-[#5C6B80] font-bold">{dest.kind}</span>
               </div>
-              {isFtwz ? (
-                <p className="text-[11px] text-[#5C6B80] mt-1">No pendency feed<br />deployment only</p>
+              {noFeed ? (
+                <p className="text-[11px] text-[#5C6B80] px-2.5 py-3">No pendency feed · deployment only · {itvsAt(dest.id, "ftwz") + itvsAt(dest.id, "import")} ITV</p>
               ) : (
-                <>
-                  <p className="text-[18px] font-extrabold tabular-nums leading-tight">{teus} <span className="text-[10px] font-semibold text-[#5C6B80]">TEU</span></p>
-                  <p className="text-[10px] text-[#5C6B80] font-mono">
-                    {rows.length} ctr{oldest > 0 && ` · ${Math.round(oldest / 24)}d`}{odc > 0 && ` · ${odc} ODC`}
-                  </p>
-                </>
+                <div className="flex divide-x divide-[#EDF0F5]">
+                  <Half label="Import" rows={imp} itvs={itvsAt(dest.id, "import")} tone="#1F3864" />
+                  <Half label="Export" rows={exp} itvs={itvsAt(dest.id, "export")} tone="#177A47" />
+                </div>
               )}
             </div>
           );
         })}
       </div>
 
-      {/* Movements — NOT locations, so they live on their own level */}
+      {/* level 3 — what is blocking boxes from moving. NOT destinations. */}
       <div className="mt-4 pt-3.5 border-t border-[#EDF0F5]">
-        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-2">Movements <span className="font-medium normal-case tracking-normal">· not locations — these run across terminals</span></p>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-          <div className="border border-[#D8DEE7] rounded-lg px-3 py-2.5">
-            <div className="flex justify-between items-baseline">
-              <span className="font-bold text-[12.5px]">Scanning</span>
-              <span className="text-[10px] font-bold text-[#177A47]">{movementItvs("scanning")} ITV</span>
+        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-2">
+          Needs clearing first <span className="font-medium normal-case tracking-normal">· a step before the box can leave — already counted in the terminals above, not extra</span>
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {[
+            { icon: "🔍", label: "Scanning", rows: scanRows, itvs: Object.values(state.assignments).filter((a) => a.purpose === "scanning").length, hint: "needs a scan leg" },
+            { icon: "📦", label: "Check package", rows: cpRows, itvs: Object.values(state.assignments).filter((a) => a.purpose === "check_package").length, hint: "needs opening & check" },
+            { icon: "⇔", label: "ODC", rows: odcRows, itvs: null, hint: "over-dimension — tough job" },
+            { icon: "⏱", label: "Over 48h", rows: agedRows, itvs: null, hint: "ageing — clear these first" },
+          ].map((x) => (
+            <div key={x.label} className={`border rounded-lg px-3 py-2.5 ${x.rows.length && x.itvs === 0 ? "border-[#E8641B]/50 bg-[#FFF9F4]" : "border-[#D8DEE7]"}`}>
+              <div className="flex justify-between items-baseline">
+                <span className="font-bold text-[12.5px]">{x.icon} {x.label}</span>
+                {x.itvs != null && <span className={`text-[10px] font-bold ${x.itvs ? "text-[#177A47]" : "text-[#96A2B4]"}`}>{x.itvs} ITV</span>}
+              </div>
+              <p className="text-[18px] font-extrabold tabular-nums leading-tight">{teuOf(x.rows)}<span className="text-[10px] font-semibold text-[#5C6B80] ml-1">TEU</span></p>
+              <p className="text-[10px] text-[#5C6B80]">{x.rows.length} ctr · {x.hint}</p>
             </div>
-            <p className="text-[18px] font-extrabold tabular-nums leading-tight">{scanTeu} <span className="text-[10px] font-semibold text-[#5C6B80]">TEU</span></p>
-            <p className="text-[10px] text-[#5C6B80] font-mono">{scanRows.length} ctr · a slice of import</p>
-          </div>
-          <div className="border border-[#D8DEE7] rounded-lg px-3 py-2.5">
-            <div className="flex justify-between items-baseline">
-              <span className="font-bold text-[12.5px]">Check package</span>
-              <span className="text-[10px] font-bold text-[#177A47]">{movementItvs("check_package")} ITV</span>
-            </div>
-            <p className="text-[11px] text-[#5C6B80] mt-1">No pendency feed<br />deployment only</p>
-          </div>
+          ))}
         </div>
       </div>
     </div>

@@ -59,6 +59,8 @@ type Action =
   | { type: "setVehicleStatus"; vehicleId: string; status: Vehicle["status"]; note?: string; by: string }
   | { type: "reportEquipmentIssue"; equipmentId: string; by: string }
   | { type: "assignVehicle"; vehicleId: string; assignment: Assignment }
+  | { type: "commitAssignments"; vehicleIds: string[] }
+  | { type: "clearAssignment"; vehicleId: string }
   | { type: "unassignVehicle"; vehicleId: string }
   | { type: "importContainers"; list: ImportedContainer[]; source: string }
   | { type: "importVehicles"; list: ImportedVehicle[] }
@@ -513,6 +515,23 @@ function reducer(s: AppState, a: Action): AppState {
       };
     }
 
+    case "commitAssignments": {
+      // Planner signs off: tentative → confirmed. Auto-plan leaves confirmed rows alone.
+      const assignments = { ...s.assignments };
+      let n = 0;
+      a.vehicleIds.forEach((id) => {
+        const asg = assignments[id];
+        if (asg && asg.commit !== "confirmed") { assignments[id] = { ...asg, commit: "confirmed" }; n++; }
+      });
+      return { ...s, assignments, toast: n ? `${n} assignment${n === 1 ? "" : "s"} confirmed` : "Nothing to confirm" };
+    }
+
+    case "clearAssignment": {
+      const assignments = { ...s.assignments };
+      delete assignments[a.vehicleId];
+      return { ...s, assignments, toast: `${a.vehicleId} released` };
+    }
+
     case "assignVehicle": {
       const asg = a.assignment;
       const isMe = a.vehicleId === meVehId(s);
@@ -720,7 +739,7 @@ function reducer(s: AppState, a: Action): AppState {
       });
       if (picked.length === 0) return { ...s, toast: `No eligible ITV free from ${a.vendor}` };
       const assignments = { ...s.assignments };
-      picked.forEach((id) => (assignments[id] = { target: a.target, purpose: a.purpose, pickup: a.pickup }));
+      picked.forEach((id) => (assignments[id] = { target: a.target, purpose: a.purpose, pickup: a.pickup, commit: "tentative" }));
       const issue: Issue = {
         id: s.nextIssueId,
         type: "plan_change",
@@ -764,7 +783,7 @@ function reducer(s: AppState, a: Action): AppState {
     case "applyProposal": {
       if (!s.proposal) return s;
       const assignments = { ...s.assignments };
-      s.proposal.changes.forEach((c) => (assignments[c.vehicleId] = c.to));
+      s.proposal.changes.forEach((c) => (assignments[c.vehicleId] = { ...c.to, commit: "tentative" }));
       const issue: Issue = {
         id: s.nextIssueId,
         type: "plan_change",
