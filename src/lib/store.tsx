@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from "react";
 import { getDataStore } from "./data";
 import type { DataStore } from "./data/DataStore";
-import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, SummaryNotes, Trip, Vehicle, Vendor, Verification, ContainerHistory, FeedSnapshot, DutyPriority } from "./types";
+import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, SummaryNotes, Trip, Vehicle, Vendor, Verification, ContainerHistory, FeedSnapshot, DutyPriority, isLive } from "./types";
 import {
   DEFAULT_SUMMARY_NOTES, DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, PLAN_RULES, RATE_CARD, SEED_ISSUES,
   SEED_TRIPS, SHIFT, SITE, SITES, SUPERVISORS, VEHICLES,
@@ -60,6 +60,10 @@ type Action =
   | { type: "approveTrips"; driverId: string }
   | { type: "setIssueStatus"; id: number; status: Issue["status"] }
   | { type: "setVehicleStatus"; vehicleId: string; status: Vehicle["status"]; note?: string; by: string }
+  | { type: "markLive"; vehicleId: string; by: string; driverName?: string }
+  | { type: "unmarkLive"; vehicleId: string }
+  | { type: "markLiveBulk"; entries: { id: string; driverName?: string }[]; by: string }
+  | { type: "resetShiftLive" }
   | { type: "reportEquipmentIssue"; equipmentId: string; by: string }
   | { type: "assignVehicle"; vehicleId: string; assignment: Assignment }
   | { type: "commitAssignments"; vehicleIds: string[] }
@@ -312,7 +316,11 @@ function reducer(s: AppState, a: Action): AppState {
       const s2: AppState = {
         ...s,
         drivers: s.drivers.map((d) => (d.id === s.meDriverId ? { ...d, onDuty: true } : d)),
-        vehicles: setVehicle(s, mv, { status: "running", zone: "EXIM yard", statusNote: "On duty · awaiting job" }),
+        // driver app on-duty is the SECOND live source — reconciles with any manual mark
+        vehicles: setVehicle(s, mv, {
+          status: "running", zone: "EXIM yard", statusNote: "On duty · awaiting job",
+          live: { ...(s.vehicles.find((v) => v.id === mv)?.live ?? {}), app: { at: s.now } },
+        }),
         nextOfferIn: 4,
         toast: `On duty · ITV ${mv} claimed ✓`,
       };
@@ -473,6 +481,44 @@ function reducer(s: AppState, a: Action): AppState {
 
     case "setIssueStatus":
       return { ...s, issues: s.issues.map((i) => (i.id === a.id ? { ...i, status: a.status } : i)) };
+
+    case "markLive": {
+      const v = s.vehicles.find((x) => x.id === a.vehicleId);
+      if (!v) return s;
+      const live = { ...(v.live ?? {}), manual: { by: a.by, at: s.now, driverName: a.driverName || v.live?.manual?.driverName } };
+      // if a driver name was given and the ITV has no mapped driver, remember it as the note
+      return { ...s, vehicles: setVehicle(s, v.id, { live }), toast: `${v.id} marked live${a.driverName ? ` · ${a.driverName}` : ""}` };
+    }
+
+    case "unmarkLive": {
+      const v = s.vehicles.find((x) => x.id === a.vehicleId);
+      if (!v?.live) return s;
+      const live = { ...v.live };
+      delete live.manual;
+      const cleared = live.app ? live : undefined;
+      return { ...s, vehicles: setVehicle(s, v.id, { live: cleared }), toast: `${v.id} manual mark removed` };
+    }
+
+    case "markLiveBulk": {
+      const byId = new Map(a.entries.map((e) => [e.id.toUpperCase(), e]));
+      let n = 0, unknown: string[] = [];
+      const known = new Set(s.vehicles.map((v) => v.id.toUpperCase()));
+      byId.forEach((_, id) => { if (!known.has(id)) unknown.push(id); });
+      const vehicles = s.vehicles.map((v) => {
+        const e = byId.get(v.id.toUpperCase());
+        if (!e) return v;
+        n++;
+        return { ...v, live: { ...(v.live ?? {}), manual: { by: a.by, at: s.now, driverName: e.driverName || v.live?.manual?.driverName } } };
+      });
+      return { ...s, vehicles, toast: `${n} ITV${n === 1 ? "" : "s"} marked live${unknown.length ? ` · ${unknown.length} not in master (${unknown.slice(0, 4).join(", ")}${unknown.length > 4 ? "…" : ""})` : ""}` };
+    }
+
+    case "resetShiftLive": {
+      // start of a new shift — clear every live mark (both sources) so the roster
+      // is rebuilt from scratch. Assignments and status are left alone.
+      const vehicles = s.vehicles.map((v) => (v.live ? { ...v, live: undefined } : v));
+      return { ...s, vehicles, toast: "New shift — all live marks cleared" };
+    }
 
     case "setVehicleStatus": {
       // field entry from the supervisor app — audited like every manual change
@@ -757,8 +803,11 @@ function reducer(s: AppState, a: Action): AppState {
     }
 
     case "quickAllocate": {
+      // Once the roster is started, only deploy ITVs that actually turned up.
+      const rosterOn = s.vehicles.some(isLive);
+      const supply = rosterOn ? s.vehicles.filter(isLive) : s.vehicles;
       const { picked, skipped } = pickForQuickAllocate({
-        vehicles: s.vehicles,
+        vehicles: supply,
         assignments: s.assignments,
         trips: s.trips,
         vendor: a.vendor,
@@ -798,8 +847,9 @@ function reducer(s: AppState, a: Action): AppState {
       };
 
     case "suggestPlan": {
+      const rosterOn = s.vehicles.some(isLive);
       const proposal = buildPlan({
-        vehicles: s.vehicles,
+        vehicles: rosterOn ? s.vehicles.filter(isLive) : s.vehicles,
         assignments: s.assignments,
         pool: s.pool,
         trips: s.trips,

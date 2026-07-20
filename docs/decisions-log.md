@@ -314,3 +314,16 @@ Feedback: after making the EXIM pendency report the default screen, the command-
 ## 20 Jul 2026 — v0.3.0 cut: APK rebuilt, docs synced
 
 Version bumped 0.1.0 → 0.3.0 to mark the release carrying reconciliation, the storage/history model, week-of-files replay, ITV priority, the Yard map, ITV Planner, analytics, and the Dashboard-first layout. Field APK rebuilt from the current static export (`dist/NG-Marshal-v0.3.0.apk`, internal versionName synced to 0.3.0) and verified — package `com.navingroup.ngmarshal`, launch activity present, all five routes (console, driver, m, operator, supervisor) serving 200. Trial guide and features doc updated to the Dashboard/Pendency tab names. The APK stays out of git (build artifact); the team regenerates it with `scripts/build-apk.sh`.
+
+## 20 Jul 2026 — Manually mark ITVs live at shift start (with app reconciliation)
+
+The driver app will take time to adopt, so the shift can't wait on it. Added a **Shift roster** at the top of the ITV Planner: mark which ITVs turned up, from the vendor's morning list, with no driver app needed.
+
+- **Two independent sources**, shown on every ITV: **manual** (a supervisor/planner marked it) and **app** (the driver went on duty). When both agree the ITV is **✓ Confirmed** — the reconciliation the user asked for.
+- **Manual marking** — per-ITV "＋ Mark live", or **bulk**: paste the vendor's list (from Excel or a photo), one call sign per line or comma-separated, with an optional driver name after each (`A333 Ramesh Yadav`). Call signs not in the master are reported, not silently added. Driver names are optional — an ITV can be marked live with no name.
+- **`Vehicle.live = { manual?: {by, at, driverName?}, app?: {at} }`**, kept separate from `status` (what the ITV is doing) — `live` is whether it turned up at all. `liveStateOf()` derives confirmed / manual / app / none.
+- **The driver app's on-duty signal sets the `app` source** (hooked into `goOnDuty`), so a manually-marked ITV flips to Confirmed the moment its driver logs in. Verified end-to-end: planner marks A333 → driver Ramesh onboards by phone and goes on duty → A333 shows ✓ Confirmed.
+- **Planning is live-aware**: once the roster is started (anyone marked live), auto-plan and quick-allocate only deploy ITVs that turned up; un-live ITVs are flagged in the fleet. Before any mark exists, behaviour is unchanged (day-one / demo friendly).
+- **Dashboard KPI** switches from "ITVs running" to **"ITVs live · N confirmed · of fleet"** once the roster starts. **"↺ New shift"** clears all marks to rebuild the roster.
+
+The intended end state, now supported: the vendor supervisor's marking and the driver app both say live, they match, and the ITV is Confirmed — and the roster of who's available drives planning at the start of each shift.

@@ -9,7 +9,7 @@ import { parseSheetDateMs, livePool } from "@/lib/importer";
 import YardTab from "./YardTab";
 import AnalyticsPanel from "./AnalyticsPanel";
 import ItvPlannerTab from "./ItvPlannerTab";
-import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, MOVEMENT_LABEL, MovementType, VehicleStatus, DUTY_LABEL, DutyPriority } from "@/lib/types";
+import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, MOVEMENT_LABEL, MovementType, VehicleStatus, DUTY_LABEL, DutyPriority, isLive } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
 
 // The command centre comes FIRST — the dashboard is always the landing screen.
@@ -87,6 +87,9 @@ export default function ConsolePage() {
   
   const liveTeu = SHIFT.teuDoneBase + completed.filter((t) => t.id >= 1000).reduce((a, t) => a + t.teu, 0);
   const running = state.vehicles.filter((v) => v.status === "running").length;
+  const liveCount = state.vehicles.filter((v) => isLive(v)).length;
+  const liveConfirmed = state.vehicles.filter((v) => v.live?.manual && v.live?.app).length;
+  const rosterStarted = liveCount > 0;
   const standby = state.vehicles.filter((v) => v.status === "standby").length;
   const equipRunning = state.equipment.filter((e) => e.status === "running").length;
   const openIssues = state.issues.filter((i) => i.status !== "resolved");
@@ -300,7 +303,9 @@ Current Pendency:${pendencyNow}
       <div className="max-w-6xl mx-auto px-5">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 bg-white border border-[#D8DEE7] rounded-b-xl overflow-hidden">
           {[
-            { k: "ITVs running", v: `${60 + running}`, sub: `of ${SHIFT.itvsAllotted}`, tone: "good" },
+            rosterStarted
+              ? { k: "ITVs live", v: `${liveCount}`, sub: `${liveConfirmed} confirmed · of ${state.vehicles.length}`, tone: "good" }
+              : { k: "ITVs running", v: `${60 + running}`, sub: `of ${SHIFT.itvsAllotted}`, tone: "good" },
             { k: "TEUs / target", v: `${liveTeu}`, sub: `of ${site.shiftTeuTarget}`, tone: "ink" },
             { k: "Pendency", v: `${pendencyNow}`, sub: "TEU now", tone: "ink" },
             { k: "Single-trip", v: `${singleTrip}`, sub: "vs 22 y'day", tone: singleTrip > 15 ? "warn" : "good" },

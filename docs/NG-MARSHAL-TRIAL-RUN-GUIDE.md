@@ -23,6 +23,14 @@ The idea of the trial is to prove the whole loop with **real files and real peop
 
 This is the loop the docs desk and shift incharge will run every day.
 
+### A0. Mark the shift roster (start of shift)
+- Open **ITV Planner** → the **Shift roster** panel is at the top.
+- **Bulk mark live** → paste the vendor's morning list of live ITVs (from their Excel or a photo). One call sign per line, or comma-separated; add a driver name after each if you have it (`A333 Ramesh Yadav`). Names are optional.
+- Or mark each ITV with **＋ Mark live** in the fleet table. Call signs not in the master are reported, not added.
+- The roster tiles show **Live this shift · Confirmed · Manual only · App only · Not marked**. This is what "starts the shift" — from here, planning only deploys ITVs that turned up.
+- When a driver later goes on duty in the app, it **reconciles** with your manual mark and the ITV flips to **✓ Confirmed** (both sources agree). Until the app is adopted, manual marking alone is enough.
+- **↺ New shift** clears the roster to rebuild it next shift.
+
 ### A1. Feed the pendency (the every-3-4-hours step)
 - Click **⬆ Upload file** (top-right, on every screen).
 - Drop the pendency file the terminal sends. **You can drop several at once** — to simulate a day, select the last 4–8 files together; they replay oldest-first and the live pendency ends on the newest one.

@@ -180,6 +180,41 @@ export interface Vehicle {
   // Unlike restrictTo it is not a cage — if the duty has no work, the unit is freed
   // for normal allocation rather than sitting idle.
   priorityFor?: DutyPriority;
+  // SHIFT ATTENDANCE — is this ITV present for the shift, and who says so. Kept
+  // separate from `status` (running/standby/breakdown): status is what the ITV is
+  // doing, `live` is whether it turned up at all. Two independent sources so we can
+  // run on manual marking now and reconcile with the driver app as it rolls out.
+  live?: VehicleLive;
+}
+
+// Two independent confirmations that an ITV is live for the shift:
+//   manual — a supervisor/planner marked it (from the vendor's morning list — Excel,
+//            photo or word of mouth). Works today, no driver app needed.
+//   app    — the driver went on duty in the app. Arrives once the app is adopted.
+// When both are present the ITV is CONFIRMED live (the two sources agree).
+export interface VehicleLive {
+  manual?: { by: string; at: number; driverName?: string };
+  app?: { at: number };
+}
+
+export type LiveState = "confirmed" | "manual" | "app" | "none";
+
+export const LIVE_LABEL: Record<LiveState, string> = {
+  confirmed: "Confirmed",     // manual + app agree
+  manual: "Manual",           // marked by supervisor only
+  app: "App",                 // driver app only
+  none: "Not marked",         // nobody has said it is here
+};
+
+/** Where an ITV's live status comes from, this shift. */
+export function liveStateOf(v: Vehicle): LiveState {
+  const m = !!v.live?.manual, a = !!v.live?.app;
+  return m && a ? "confirmed" : m ? "manual" : a ? "app" : "none";
+}
+
+/** Is this ITV present for the shift at all (by either source)? */
+export function isLive(v: Vehicle): boolean {
+  return !!(v.live?.manual || v.live?.app);
 }
 
 export interface TripEarnings {
