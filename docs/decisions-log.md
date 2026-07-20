@@ -305,3 +305,8 @@ Auto-plan now emits a **vendor-wise plan** ("Active: 10 → CT4 · Import, 4 →
 ## 20 Jul 2026 — Analytics surfaced (proves the storage model earns its keep)
 
 Summary tab now carries an Analytics panel with four views, each built only from retained data: **TAT & throughput** (from history), **Pendency trend** (from feeds), **ITV-wise** and **Driver-wise** (from trips). If a view can't be built, that record isn't worth keeping — the test applied to the whole storage model. Verified rendering on 84 cleared containers (avg TAT 90.5h, per-terminal breakdown).
+
+
+## 20 Jul 2026 — Dashboard is the landing tab again; Pendency is its own
+
+Feedback: after making the EXIM pendency report the default screen, the command-centre dashboard felt lost. Fixed by splitting them: **Dashboard** (deployment, fleet board, trip distribution, hot list, open issues, shift analytics) is tab 1 and the landing screen; **Pendency** (the EXIM report in the team's Excel format) sits right beside it as tab 2. Same six-tab count — the old "Live" content is the dashboard, promoted to first; the pendency report keeps its own home. Both the manager's glance and the formal report are one click apart.

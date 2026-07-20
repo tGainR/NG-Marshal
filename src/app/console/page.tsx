@@ -12,18 +12,17 @@ import ItvPlannerTab from "./ItvPlannerTab";
 import { EQUIPMENT_TYPE_LABEL, EquipmentType, Issue, MOVEMENT_LABEL, MovementType, VehicleStatus, DUTY_LABEL, DutyPriority } from "@/lib/types";
 import { Wordmark } from "@/components/Brand";
 
-// Six surfaces, each named for a VERB — the split that terminal operating systems
-// use, and the one that was missing before: PLAN (intent) and DISPATCH (which ITV
-// goes where) are different jobs and belong on different screens.
-type Tab = "summary" | "yard" | "planning" | "itv" | "live" | "setup";
+// The command centre comes FIRST — the dashboard is always the landing screen.
+// The EXIM pendency report (your Excel format) is its own tab right beside it.
+type Tab = "dashboard" | "pendency" | "yard" | "planning" | "itv" | "setup";
 
 const TABS: { id: Tab; label: string; purpose: string }[] = [
-  { id: "summary",  label: "Summary",     purpose: "READ — the EXIM PENDENCY REPORT in your Excel format, live. Read it, edit the manual cells, print it." },
-  { id: "yard",     label: "Yard",        purpose: "SEE — block-wise map of where the containers actually are. Colour it by ageing, direction, flags or fill." },
-  { id: "planning", label: "Plan",        purpose: "DECIDE — how much work is waiting per destination, what each lane should get, and the rules behind it. No ITV named here." },
-  { id: "itv",      label: "ITV Planner", purpose: "ASSIGN — one row per ITV: send it where. Work queues on top, the fleet below, tentative until you confirm." },
-  { id: "live",     label: "Live",        purpose: "MONITOR — what is happening right now: trips in flight, fleet status, and the open issue queue." },
-  { id: "setup",    label: "Setup",       purpose: "CONFIGURE — masters (vendors, ITVs, drivers), equipment & operators, rate card, incentives, planning rules." },
+  { id: "dashboard", label: "Dashboard",   purpose: "THE WHOLE PICTURE — deployment, fleet status, trips, hot list, open issues and shift analytics, live." },
+  { id: "pendency",  label: "Pendency",    purpose: "THE REPORT — the EXIM PENDENCY REPORT in your Excel format, live. Read it, edit the manual cells, print it." },
+  { id: "yard",      label: "Yard",        purpose: "SEE — block-wise map of where the containers actually are. Colour it by ageing, direction, flags or fill." },
+  { id: "planning",  label: "Plan",        purpose: "DECIDE — how much work is waiting per destination, what each lane should get, and the rules behind it. No ITV named here." },
+  { id: "itv",       label: "ITV Planner", purpose: "ASSIGN — one row per ITV: send it where. Work queues on top, the fleet below, tentative until you confirm." },
+  { id: "setup",     label: "Setup",       purpose: "CONFIGURE — masters (vendors, ITVs, drivers), equipment & operators, rate card, incentives, planning rules." },
 ];
 
 const STATUS_STYLE: Record<VehicleStatus, { label: string; cls: string }> = {
@@ -56,7 +55,7 @@ function Td({ children, className = "" }: { children: React.ReactNode; className
 
 export default function ConsolePage() {
   const { state, dispatch } = useApp();
-  const [tab, setTab] = useState<Tab>("summary");
+  const [tab, setTab] = useState<Tab>("dashboard");
   const [reportOpen, setReportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [bulkResult, setBulkResult] = useState<string | null>(null);
@@ -77,7 +76,8 @@ export default function ConsolePage() {
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
     if (TABS.some((x) => x.id === t)) setTab(t as Tab);
-    else if (t === "issues") setTab("live");
+    else if (t === "issues" || t === "live") setTab("dashboard");
+    else if (t === "summary") setTab("pendency");
     else if (t === "masters" || t === "equipment" || t === "incentives") setTab("setup");
     else if (t === "dispatch" || t === "planner") setTab("itv");
   }, []);
@@ -326,7 +326,7 @@ Current Pendency:${pendencyNow}
               }`}
             >
               {t.label}
-              {t.id === "live" && openIssues.length > 0 && (
+              {t.id === "dashboard" && openIssues.length > 0 && (
                 <span className="ml-1.5 bg-[#C0392B] text-white rounded-full px-1.5 py-0.5 text-[10px]">{openIssues.length}</span>
               )}
             </button>
@@ -335,7 +335,7 @@ Current Pendency:${pendencyNow}
         <p className="text-[11.5px] text-[#5C6B80] mt-2 leading-snug">{TABS.find((t) => t.id === tab)?.purpose}</p>
 
         {/* LIVE BOARD */}
-        {tab === "live" && (
+        {tab === "dashboard" && (
           <div className="mt-4 flex flex-col gap-5">
           {/* Deployment — locations first (with direction split), movements separately */}
           <div className="bg-white border border-[#D8DEE7] rounded-xl p-4">
@@ -524,8 +524,8 @@ Current Pendency:${pendencyNow}
           </div>
           </div>
         )}
-        {tab === "summary" && <PendencySummaryTab site={site} />}
-        {tab === "summary" && <AnalyticsPanel />}
+        {tab === "pendency" && <PendencySummaryTab site={site} />}
+        {tab === "dashboard" && <AnalyticsPanel />}
         {tab === "yard" && <YardTab />}
         {tab === "itv" && <ItvPlannerTab site={site} />}
         {tab === "planning" && <PendencyPanel site={site} />}
@@ -726,7 +726,7 @@ Current Pendency:${pendencyNow}
         )}
 
         {/* ISSUES */}
-        {tab === "live" && (
+        {tab === "dashboard" && (
           <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4">
             <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">
               Issues &amp; exceptions · open first · everything owned &amp; audited
