@@ -310,3 +310,7 @@ Summary tab now carries an Analytics panel with four views, each built only from
 ## 20 Jul 2026 — Dashboard is the landing tab again; Pendency is its own
 
 Feedback: after making the EXIM pendency report the default screen, the command-centre dashboard felt lost. Fixed by splitting them: **Dashboard** (deployment, fleet board, trip distribution, hot list, open issues, shift analytics) is tab 1 and the landing screen; **Pendency** (the EXIM report in the team's Excel format) sits right beside it as tab 2. Same six-tab count — the old "Live" content is the dashboard, promoted to first; the pendency report keeps its own home. Both the manager's glance and the formal report are one click apart.
+
+## 20 Jul 2026 — v0.3.0 cut: APK rebuilt, docs synced
+
+Version bumped 0.1.0 → 0.3.0 to mark the release carrying reconciliation, the storage/history model, week-of-files replay, ITV priority, the Yard map, ITV Planner, analytics, and the Dashboard-first layout. Field APK rebuilt from the current static export (`dist/NG-Marshal-v0.3.0.apk`, internal versionName synced to 0.3.0) and verified — package `com.navingroup.ngmarshal`, launch activity present, all five routes (console, driver, m, operator, supervisor) serving 200. Trial guide and features doc updated to the Dashboard/Pendency tab names. The APK stays out of git (build artifact); the team regenerates it with `scripts/build-apk.sh`.

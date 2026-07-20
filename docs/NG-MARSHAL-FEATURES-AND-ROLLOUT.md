@@ -16,12 +16,12 @@ Structured the way terminal operating systems (Navis N4, Tideworks) split the wo
 
 | Screen | Verb | What it is for |
 |---|---|---|
-| **Summary** *(default)* | READ | The EXIM PENDENCY REPORT in your Excel format, live. Read it, edit the manual cells, print it. |
+| **Dashboard** *(landing)* | MONITOR | The whole picture — KPI strip, deployment by location, fleet board, trip distribution, hot list, open issues and shift analytics, live. |
+| **Pendency** | READ | The EXIM PENDENCY REPORT in your Excel format, live. Read it, edit the manual cells, print it. |
 | **Yard** | SEE | Block-wise map of where the containers actually are. Colour by ageing / import-export / flags / fill. |
 | **Plan** | DECIDE | How much work waits at each destination, lane targets, the rules. No ITV is named here. |
 | **ITV Planner** | ASSIGN | One row per ITV — send it where. Work queues on top, fleet below, tentative until you confirm. |
-| **Live** | MONITOR | What is happening now — trips in flight, fleet status, open issues. |
-| **Setup** | CONFIGURE | Masters, equipment & operators, rate card, incentives, planning rules. |
+| **Setup** | CONFIGURE | Masters, equipment & operators, rate card, incentives, planning rules, and Data & storage. |
 
 **⬆ Upload file** is in the top-right of the header — same place on every screen.
 
@@ -31,10 +31,14 @@ Structured the way terminal operating systems (Navis N4, Tideworks) split the wo
 2. **Upload** — the **⬆ Upload file** button sits in the **top-right of the console header**, so it is in the same place on every screen. Drag/drop or choose an Excel/CSV. Type auto-detected (import pendency / export cutoff / ITV master / driver master). Multi-sheet files import together.
 3. **Manual entry** — always available, always stamped who/when/why.
 
-**Uploading never overwrites.** Each pendency file is treated as a snapshot of what is pending *now*. On load, the system reconciles: containers not seen before are **added**, containers already in the system are **updated in place** (duplicates merged — the same container can never appear twice), and containers that are no longer in the file have moved, so they are **marked cleared** and kept as history rather than deleted. Every upload reports exactly what happened — e.g. `IMPORT pendency_1200.xlsx: +38 new · 402 updated · 24 cleared`. Uploading the same file twice changes nothing.
+**Uploading never overwrites.** Each pendency file is a snapshot of what is pending *now*. On load the system reconciles: new containers are **added**, known ones **updated in place** (duplicates merged — a container can never appear twice), and any no longer in the file have **left** — those shrink into a compact history record (about a third the size) rather than being kept as full rows or deleted. Every upload reports what happened — `IMPORT 18 Jul 12:00: +38 new · 402 updated · 24 cleared · 460 pending now`. Uploading the same file twice changes nothing.
 
-### B. Pendency Summary (the live version of your Excel) — **the console's home screen**
-- The **"EXIM PENDENCY REPORT"** you keep by hand, now **live** — recomputes the instant a file lands. This is the **first tab and the default screen**, so the console opens on the report the team already reads.
+**A week of files, any order.** The feed time is read from the filename (`Import_Containers_18072026_1200`), so you can drop several files at once — they replay oldest-first and live pendency ends on the newest sheet. An older file uploaded late only back-dates history; it never wrongly clears, and never resurrects a container that has already left.
+
+**Storage stays lean.** The pending pool only ever holds what is actually pending; departed containers become compact history; each file leaves one small trend-snapshot. Every list has a retention cap. A live **Data & storage** panel in Setup shows exactly what is kept, its size, and what question it answers — at normal volumes a year of operation fits in browser storage.
+
+### B. Pendency report (the live version of your Excel)
+- The **"EXIM PENDENCY REPORT"** you keep by hand, now **live** — recomputes the instant a file lands. It has its own **Pendency** tab, right beside the Dashboard.
 - Import by dwell-day × terminal × Normal/Scanning × 20'/40', with auto **LINE HOLD** flags and red-shaded aged cells; Export by cutoff-day; TOTAL PENDENCY box; Yard Inventory; terminal-wise ITV deployment plan; Available Trailers.
 - Same layout your team already reads. The parts with no data feed (yard inventory, terminal holds, remarks, check-package) are **editable in place** (✎ Edit manual) and saved — so it matches your Excel exactly, without maintaining a separate file.
 
@@ -51,8 +55,10 @@ Structured the way terminal operating systems (Navis N4, Tideworks) split the wo
 - **Assignment board** — pick the actual ITV and send it; ITV preferences shown (🔒 scanning-only, ★ preferred) and driver notes ("no MICT").
 - **Auto-plan** — reads live pendency + your rules and **proposes** a plan (never auto-applies): demand-weighted, **fair vendor mix** (no vendor dominates a terminal), **trip equity** (drivers with fewest trips get first pick of high-yield lanes — equal earning opportunity), scanning-only units placed first, honest gaps listed. You Apply or Discard.
 - **Rules** (lane minimums/maximums/weights, vendor caps, fairness toggles) are editable settings — no developer needed.
+- **ITV priority in the master** — each ITV can carry a hard **"only allowed"** duty (a scanning-only unit is never sent elsewhere, even when short) and a soft **"first call"** priority (backlog / scanning / check package / import / export — taken first for that duty, but freed to the pool if it has no work). "Backlog" means send at the oldest cargo first.
+- **Analytics** (on the Dashboard) — TAT and throughput, the pendency trend across feeds, and ITV-wise / driver-wise productivity — all from the data the app already keeps.
 
-### D. Live board & command center
+### D. Dashboard — the command center (landing screen)
 - Fleet status (running / standby+reason / breakdown / diesel / no-driver), deployment by location with import/export split, trip-distribution histogram, hot-list countdowns, standby evidence pack.
 - **Auto-generated pendency report** in your exact WhatsApp format — one tap to copy.
 
@@ -115,7 +121,7 @@ Order matters. Steps 1–3 are technical (a developer, ~half a day). Steps 4–6
 ## PART 3 — How to start using it (daily flow)
 
 **Docs / data desk**
-- Each 3-hour email arrives → forwarded automatically (or drop the file in Planning & imports). Pendency Summary updates itself. Fill the manual bits (yard inventory, remarks) via ✎ Edit manual, same as the Excel.
+- Each 3-hour email arrives → forwarded automatically (or drop the file via ⬆ Upload file, top-right). Pendency Summary updates itself. Fill the manual bits (yard inventory, remarks) via ✎ Edit manual, same as the Excel.
 
 **Shift incharge / planner**
 - Open **Planning** → read pendency vs deployed → **Quick allocate** vendor batches, or **Suggest plan** → review → **Apply**. Assignments are recorded and audited.
@@ -131,7 +137,7 @@ Order matters. Steps 1–3 are technical (a developer, ~half a day). Steps 4–6
 - Open app → their machine → +/− the hours & moves → **Save**. Breakdown button if needed.
 
 **Manager**
-- Live board and Pendency Summary for the whole picture; incentive ledger for payouts.
+- Dashboard and Pendency report for the whole picture; incentive ledger for payouts.
 
 ---
 
@@ -157,4 +163,4 @@ Order matters. Steps 1–3 are technical (a developer, ~half a day). Steps 4–6
 - `itv-app/README.md` — run locally
 - `current-process-vs-ng-marshal.md` — how things run today vs with the app
 - `PROJECT-BRIEF.md` — the original brief
-- `dist/NG-Marshal-v0.1.0.apk` — the installable field app (sideload to an Android phone)
+- `dist/NG-Marshal-v0.3.0.apk` — the installable field app (sideload to an Android phone)

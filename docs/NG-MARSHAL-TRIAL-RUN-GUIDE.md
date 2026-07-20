@@ -35,7 +35,8 @@ This is the loop the docs desk and shift incharge will run every day.
 > **Try the out-of-order case on purpose:** after loading today's files, upload a 2-day-old file. The app will say *"…is OLDER than the latest feed — nothing cleared"* and will **not** resurrect containers that have since left. That's the guard working.
 
 ### A2. Read the live pendency
-- **Summary** — the EXIM pendency report in your exact format, now filled with real numbers. Edit the manual cells (yard inventory, remarks) with ✎ Edit manual.
+- **Dashboard** — the landing screen: KPI strip, deployment by location, fleet board, trip distribution, hot list, open issues and shift analytics, all live.
+- **Pendency** — the EXIM pendency report in your exact format, now filled with real numbers. Edit the manual cells (yard inventory, remarks) with ✎ Edit manual.
 - **Yard** — the block-wise map, built from the Location column. Colour by ageing to see which blocks are stale.
 - **Plan** — pendency per destination, import and export side by side, with "Needs clearing first" (scanning / check package / ODC / over-48h) as a separate band.
 
@@ -53,7 +54,7 @@ This is the loop the docs desk and shift incharge will run every day.
 - Generate the **⇪ Report → WhatsApp** to see the deployment message in your usual format.
 
 ### A5. Watch it come back
-- As the field marks trips (Part B), **Live** shows trips in flight and fleet status, and **Summary → Analytics** fills in: TAT, throughput, ITV-wise and driver-wise. After a couple of feeds you'll see real turnaround times.
+- As the field marks trips (Part B), the **Dashboard** shows trips in flight and fleet status, and its **Analytics** panel fills in: TAT, throughput, ITV-wise and driver-wise. After a couple of feeds you'll see real turnaround times.
 
 ---
 
@@ -68,7 +69,7 @@ Each person uses **one phone**. No role picking — the phone number decides who
 ### B2. Driver
 - Opens on the money-meter and their ITV (from the master mapping).
 - **Slide to go on duty** → accept the job offer → drive (pretend) → **snap the terminal slip** with the camera → the trip records and the meter moves.
-- Try the **⚠️ Problem** button — raises an issue that appears on the supervisor's phone and on HO's Live board.
+- Try the **⚠️ Problem** button — raises an issue that appears on the supervisor's phone and on HO's Dashboard.
 
 ### B3. Supervisor
 - Opens on fleet KPIs. Mark an ITV **breakdown**, **Ack/Resolve** an issue, and at shift end **Approve** each driver's trips.
@@ -84,7 +85,7 @@ Each person uses **one phone**. No role picking — the phone number decides who
 Do this end-to-end once, with HO on the laptop and 2 phones:
 
 1. **HO:** Reset. Enter 12 ITVs (mark 2 scanning-only, 1 backlog-priority), 2 drivers, map them. *(5 min)*
-2. **HO:** Bulk-upload one day of real pendency files. Confirm the numbers look right on Summary. *(5 min)*
+2. **HO:** Bulk-upload one day of real pendency files. Confirm the numbers look right on the Dashboard and Pendency tabs. *(5 min)*
 3. **HO:** Suggest plan → read the vendor-wise routine → confirm scanning-only units stayed on scanning → Apply. *(10 min)*
 4. **HO:** ITV Planner → confirm the plan → send the WhatsApp report. *(5 min)*
 5. **Field:** both phones onboard, go on duty, each accepts a job and snaps a slip. Supervisor marks one breakdown. *(15 min)*
@@ -111,11 +112,11 @@ Until then, the trial and even a small real pilot can run exactly as above.
 ## Quick reference — what each screen is for
 | Screen | Verb | Use it to |
 |---|---|---|
-| Summary | READ | read live pendency + analytics; print the report |
+| Dashboard | MONITOR | the whole picture — deployment, fleet, trips, issues, analytics (the landing screen) |
+| Pendency | READ | the EXIM pendency report in your Excel format; edit manual cells; print |
 | Yard | SEE | see where containers are, block by block |
 | Plan | DECIDE | see demand per destination and auto-plan |
 | ITV Planner | ASSIGN | send each ITV; confirm the plan |
-| Live | MONITOR | watch trips, fleet, issues right now |
 | Setup | CONFIGURE | masters, rules, rates, and Data & storage |
 
 **⬆ Upload file** (top-right) and **↺ Reset** are on every screen.
