@@ -3,14 +3,14 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from "react";
 import { getDataStore } from "./data";
 import type { DataStore } from "./data/DataStore";
-import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, SummaryNotes, Trip, Vehicle, Vendor, Verification } from "./types";
+import { Assignment, Driver, Equipment, EquipmentLog, Issue, MovementType, Offer, Operator, PlanProposal, PlanRules, RateCard, Site, SummaryNotes, Trip, Vehicle, Vendor, Verification, ContainerHistory, FeedSnapshot, DutyPriority } from "./types";
 import {
   DEFAULT_SUMMARY_NOTES, DRIVERS, EQUIPMENT, HOT_JOBS, ME_DRIVER_ID, ME_VEHICLE_ID, OPERATORS, PLAN_RULES, RATE_CARD, SEED_ISSUES,
   SEED_TRIPS, SHIFT, SITE, SITES, SUPERVISORS, VEHICLES,
 } from "./seed";
 import { buildPlan, pickForQuickAllocate } from "./planner";
 import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
-import { ImportedContainer, ImportedDriver, ImportedVehicle, reconcilePool } from "./importer";
+import { ImportedContainer, ImportedDriver, ImportedVehicle, reconcilePool, parseFeedTimestamp } from "./importer";
 
 export interface AppState {
   now: number; // sim seconds since load
@@ -19,7 +19,10 @@ export interface AppState {
   trips: Trip[];
   issues: Issue[];
   assignments: Record<string, Assignment>; // vehicleId → planner assignment
-  pool: ImportedContainer[]; // imported container pool (pendency/cutoff files)
+  pool: ImportedContainer[]; // PENDING containers only — never grows with throughput
+  history: ContainerHistory[]; // containers that have left — compact, for TAT & volumes
+  feeds: FeedSnapshot[]; // one row per uploaded file — the pendency trend
+  lastFeedAt: Record<string, number>; // direction → newest feed timestamp seen
   sites: Site[]; // projects/sites the operator runs
   activeSiteId: string; // currently-selected site
   planRules: PlanRules; // allocation rules — editable in console, versioned
@@ -72,7 +75,7 @@ type Action =
   | { type: "updateSettings"; rateCard: RateCard; milestoneTeu: number }
   | { type: "setActiveSite"; siteId: string }
   | { type: "quickAllocate"; vendor: string; count: number; target: string; purpose: MovementType; pickup?: string }
-  | { type: "setVehiclePrefs"; vehicleId: string; restrictTo?: MovementType[]; preferFor?: MovementType[] }
+  | { type: "setVehiclePrefs"; vehicleId: string; restrictTo?: MovementType[]; preferFor?: MovementType[]; priorityFor?: DutyPriority }
   | { type: "suggestPlan" }
   | { type: "applyProposal" }
   | { type: "discardProposal" }
@@ -568,13 +571,40 @@ function reducer(s: AppState, a: Action): AppState {
     }
 
     case "importContainers": {
-      // RECONCILE, never overwrite. Each file is a snapshot of what is pending NOW
-      // for that direction: new rows added, known rows updated in place (deduped),
-      // rows missing from the newest file marked "cleared" and kept as history.
+      // RECONCILE against what we already hold. Each file is a snapshot of what was
+      // pending at ITS OWN timestamp — so a week of files can be dropped in any order
+      // and still stack up correctly: containers are only cleared against the newest
+      // feed seen for that direction, never against an older one arriving late.
       const dir = a.list[0]?.direction ?? "import";
-      const { pool, added, updated, cleared } = reconcilePool(s.pool, a.list, dir, a.source, s.now);
+      const parsed = parseFeedTimestamp(a.source);
+      const feedAt = Number.isNaN(parsed) ? Date.now() : parsed;
+      const prevNewest = s.lastFeedAt[dir] ?? 0;
+      const isNewest = feedAt >= prevNewest;
+
+      const { pool, history, added, updated, cleared, stale } = reconcilePool(s.pool, a.list, dir, a.source, feedAt, isNewest, s.history);
+
+      const pending = pool.filter((c) => (c.direction ?? "import") === dir);
+      const byTerminal: Record<string, number> = {};
+      pending.forEach((c) => { const t = c.terminal || "—"; byTerminal[t] = (byTerminal[t] ?? 0) + c.teu; });
+      const snapshot: FeedSnapshot = {
+        at: feedAt, file: a.source, dir,
+        pending: pending.length,
+        teu: pending.reduce((x, c) => x + c.teu, 0),
+        added, updated, cleared, byTerminal,
+      };
+
       const label = dir === "export" ? "EXPORT" : "IMPORT";
-      return { ...s, pool, toast: `${label} ${a.source}: +${added} new · ${updated} updated · ${cleared} cleared` };
+      const stamp = new Date(feedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+      return applyRetention({
+        ...s,
+        pool,
+        history: [...history, ...s.history],
+        feeds: [snapshot, ...s.feeds],
+        lastFeedAt: isNewest ? { ...s.lastFeedAt, [dir]: feedAt } : s.lastFeedAt,
+        toast: isNewest
+          ? `${label} ${stamp}: +${added} new · ${updated} updated · ${cleared} cleared · ${pending.length} pending now`
+          : `${label} ${stamp} is OLDER than the latest feed — ${added} back-dated, ${stale} already gone (ignored), nothing cleared`,
+      });
     }
 
     case "importVehicles": {
@@ -763,7 +793,7 @@ function reducer(s: AppState, a: Action): AppState {
     case "setVehiclePrefs":
       return {
         ...s,
-        vehicles: s.vehicles.map((v) => (v.id === a.vehicleId ? { ...v, restrictTo: a.restrictTo, preferFor: a.preferFor } : v)),
+        vehicles: s.vehicles.map((v) => (v.id === a.vehicleId ? { ...v, restrictTo: a.restrictTo, preferFor: a.preferFor, priorityFor: a.priorityFor } : v)),
         toast: `${a.vehicleId} preferences saved`,
       };
 
@@ -872,6 +902,9 @@ const initial: AppState = {
   trips: SEED_TRIPS,
   issues: SEED_ISSUES,
   pool: [],
+  history: [],
+  feeds: [],
+  lastFeedAt: {},
   sites: SITES,
   activeSiteId: SITE.id,
   planRules: PLAN_RULES,
@@ -906,8 +939,32 @@ const initial: AppState = {
 const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
 
 // Persistable subset — sim-only fields (now, offer, toast, celebration, nextOfferIn) never sync.
+// ── Retention ────────────────────────────────────────────────────────────────
+// Caps chosen so a year of normal operation fits comfortably in browser storage
+// while still answering every question: TAT per container, pendency trend per feed,
+// trips per ITV and per driver. Oldest rows fall off first.
+export const RETENTION = {
+  history: 40000,       // ~6 months of containers at 200/day — TAT & volume analytics
+  feeds: 1500,          // ~6 months at 8 uploads/day — the pendency trend line
+  trips: 20000,         // per-ITV and per-driver productivity
+  issues: 3000,
+  equipmentLogs: 8000,
+} as const;
+
+/** Trim every unbounded list to its cap. Applied on every write that can grow. */
+function applyRetention(s: AppState): AppState {
+  return {
+    ...s,
+    history: s.history.length > RETENTION.history ? s.history.slice(0, RETENTION.history) : s.history,
+    feeds: s.feeds.length > RETENTION.feeds ? s.feeds.slice(0, RETENTION.feeds) : s.feeds,
+    trips: s.trips.length > RETENTION.trips ? s.trips.slice(0, RETENTION.trips) : s.trips,
+    issues: s.issues.length > RETENTION.issues ? s.issues.slice(0, RETENTION.issues) : s.issues,
+    equipmentLogs: s.equipmentLogs.length > RETENTION.equipmentLogs ? s.equipmentLogs.slice(0, RETENTION.equipmentLogs) : s.equipmentLogs,
+  };
+}
+
 const PERSIST_KEYS = [
-  "drivers", "vehicles", "trips", "issues", "assignments", "pool",
+  "drivers", "vehicles", "trips", "issues", "assignments", "pool", "history", "feeds", "lastFeedAt",
   "vendors", "rateCard", "milestoneTeu", "sites", "activeSiteId", "planRules", "summaryNotes",
   "equipment", "operators", "equipmentLogs", "nextLogId",
   "nextTripId", "nextIssueId", "passesThisShift", "milestoneHit",

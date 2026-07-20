@@ -10,6 +10,18 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   ftwz: "FTWZ movement",
 };
 
+// A duty an ITV can be given first call on, set in the ITV master.
+// "backlog" is not a movement — it means "send this one at the oldest cargo first".
+export type DutyPriority = "backlog" | "scanning" | "check_package" | "import" | "export";
+
+export const DUTY_LABEL: Record<DutyPriority, string> = {
+  backlog: "Backlog (oldest first)",
+  scanning: "Scanning",
+  check_package: "Check package",
+  import: "Import",
+  export: "Export",
+};
+
 export type VehicleStatus =
   | "running"
   | "standby"
@@ -108,6 +120,38 @@ export interface Supervisor {
 
 // Planner assigns ITV → location/purpose. Import: terminal only (gate gives container).
 // Export: pickup yard + destination terminal.
+// ── What we keep, and why ────────────────────────────────────────────────────
+// Storage rule: keep the SMALLEST record that still answers every question the
+// business asks. A pending container needs its full row (the planner reads every
+// field). A container that has left needs only enough for TAT and volume history —
+// roughly a third the size — so on clearing we shrink the row instead of keeping it.
+// Everything else (per-upload aggregates, trips, issues) is capped and rolled up.
+
+/** A container that has left the yard. Compact — TAT/analytics only, never planned on. */
+export interface ContainerHistory {
+  no: string;
+  dir: "import" | "export";
+  teu: number;
+  term?: string;      // terminal
+  flags?: string;     // compact: "s" scan · "c" check package · "o" ODC
+  inAt: number;       // first seen (epoch ms)
+  outAt: number;      // cleared (epoch ms)
+  dwellHrs: number;   // last known dwell from the feed — the TAT number
+}
+
+/** One row per uploaded file: what the yard looked like at that moment. */
+export interface FeedSnapshot {
+  at: number;           // epoch ms of the feed itself (parsed from the file), not upload time
+  file: string;
+  dir: "import" | "export";
+  pending: number;      // containers still pending after this feed
+  teu: number;
+  added: number;
+  updated: number;
+  cleared: number;
+  byTerminal: Record<string, number>; // TEU per terminal — enough to redraw any trend
+}
+
 export interface Assignment {
   target: string; // terminal or SCAN
   purpose: MovementType;
@@ -132,6 +176,10 @@ export interface Vehicle {
   // Allocation preferences — shown to the planner and honoured by auto-plan.
   restrictTo?: MovementType[]; // HARD: this ITV may ONLY do these movements (e.g. scanning-only units)
   preferFor?: MovementType[]; // SOFT: prefer these, but can be sent elsewhere if needed
+  // FIRST CALL: this ITV is taken for this duty before any other unit is considered.
+  // Unlike restrictTo it is not a cage — if the duty has no work, the unit is freed
+  // for normal allocation rather than sitting idle.
+  priorityFor?: DutyPriority;
 }
 
 export interface TripEarnings {

@@ -83,6 +83,24 @@ function eligible(v: Vehicle, lane: LaneRule, rules: PlanRules, driverNote?: str
 /**
  * Build a proposed allocation. Never mutates state — the planner reviews and applies.
  */
+/** The containers a lane is responsible for — same rule laneDemand counts by. */
+function laneRows(lane: LaneRule, pool: PoolItem[]): PoolItem[] {
+  const imports = pool.filter((c) => (c.direction ?? "import") === "import");
+  switch (lane.purpose) {
+    case "scanning": return imports.filter((c) => c.scan);
+    case "import": return imports.filter((c) => c.terminal === lane.target && !c.scan);
+    case "export": return pool.filter((c) => c.direction === "export" && c.terminal === lane.target);
+    default: return [];
+  }
+}
+
+/** Share of a lane's pending containers that are ageing past 48h — 0..1. */
+export function laneAgeShare(lane: LaneRule, pool: PoolItem[]): number {
+  const rows = laneRows(lane, pool);
+  if (!rows.length) return 0;
+  return rows.filter((c) => (c.pendencyHrs ?? 0) >= 48).length / rows.length;
+}
+
 export function buildPlan(args: {
   vehicles: Vehicle[];
   assignments: Record<string, Assignment>;
@@ -160,6 +178,9 @@ export function buildPlan(args: {
   const yields: Record<string, number> = {};
   lanes.forEach((l) => (yields[l.id] = laneYield(l, trips)));
   const maxYield = Math.max(1, ...Object.values(yields));
+  // how backlogged each lane is — drives the "backlog first call" priority
+  const laneAge: Record<string, number> = {};
+  lanes.forEach((l) => (laneAge[l.id] = laneAgeShare(l, pool)));
 
   const taken = new Set<string>();
   const laneAssigned: Record<string, Vehicle[]> = {};
@@ -192,6 +213,13 @@ export function buildPlan(args: {
         let score = 0;
         // restricted units belong here — strongest pull
         if (v.restrictTo?.includes(lane.purpose)) score += 100;
+        // FIRST CALL from the ITV master. Not a cage like restrictTo: if this duty has
+        // no work the unit still gets allocated normally, it just loses the bonus.
+        if (v.priorityFor) {
+          if (v.priorityFor === lane.purpose) score += 80;
+          // "backlog" is not a movement — it means send this one at the oldest cargo.
+          else if (v.priorityFor === "backlog") score += (laneAge[lane.id] ?? 0) * 80;
+        }
         // soft preference
         if (rules.respectPreferences && v.preferFor?.includes(lane.purpose)) score += 30;
         // trip equity: fewer trips → first pick of high-yield lanes

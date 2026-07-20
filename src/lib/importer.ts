@@ -2,6 +2,7 @@
 // Built to be tested against the real 3-hr pendency Excel, cutoff files, and ITV/driver masters.
 import * as XLSX from "xlsx";
 import { isValidContainerNo } from "./incentive";
+import { ContainerHistory } from "./types";
 
 export type ImportKind = "container_pool" | "itv_master" | "driver_master" | "unknown";
 
@@ -25,72 +26,112 @@ export interface ImportedContainer {
   party?: string; // ADLL / AMTE
   valid: boolean; // ISO 6346 check digit
   // ── lifecycle (set by reconciliation, not by the parser) ──
-  // Each uploaded pendency file is a SNAPSHOT of what is currently pending.
-  // We never blind-overwrite: new rows are added, existing rows updated in place,
-  // and rows absent from the newest file are marked "cleared" (they moved) and kept
-  // for history — so the pool is incremental with duplicates merged, not replaced.
-  status?: "pending" | "cleared";
-  clearedAt?: number; // sim-seconds when it disappeared from the feed
+  // Each uploaded pendency file is a SNAPSHOT of what is currently pending. New rows
+  // are added, existing rows updated in place, and rows absent from the newest file
+  // have left — those are shrunk into a compact ContainerHistory record rather than
+  // kept here, so this array only ever holds live work.
+  status?: "pending";
   firstSeenFile?: string;
+  firstSeenAt?: number; // epoch ms of the FEED it first appeared in — the TAT clock start
   lastSeenFile?: string;
+  lastSeenAt?: number;
 }
 
 export interface ReconcileResult {
-  pool: ImportedContainer[];
+  pool: ImportedContainer[];     // PENDING only — cleared rows are never kept here
+  history: ContainerHistory[];   // compact records for the ones that left, newest first
   added: number;
   updated: number;
   cleared: number;
+  stale: number; // rows ignored because that container had already left
 }
+
+const flagsOf = (c: ImportedContainer) =>
+  [c.scan ? "s" : "", /CHECK|CP\b|PACKAGE/i.test(c.category ?? "") ? "c" : "", c.category === "ODC" ? "o" : ""].join("") || undefined;
 
 /**
  * Merge a newly uploaded snapshot into the existing pool, for ONE direction.
- * Additive, deduped, status-driven: new rows added, known rows updated in place
- * (keeping first-seen), rows absent from the snapshot marked cleared and kept as
- * history (capped). The other direction's rows are passed through untouched.
+ *
+ * Additive and status-driven: new rows added, known rows updated in place (deduped),
+ * rows absent from the snapshot marked as gone. A gone container is NOT kept as a
+ * full row — it is shrunk to a ContainerHistory record (about a third the size) that
+ * still carries everything TAT and volume reporting need. The pool therefore only
+ * ever holds what is actually pending, and does not grow with throughput.
+ *
+ * `feedAt` is the timestamp OF THE FILE. Uploading an older file after a newer one
+ * must not wrongly clear containers, so the caller passes `isNewest` — when false we
+ * only add and update, never clear.
  */
 export function reconcilePool(
   prevPool: ImportedContainer[],
   incomingRows: ImportedContainer[],
   direction: "import" | "export",
   source: string,
-  now: number,
-  historyCap = 2000,
+  feedAt: number,
+  isNewest = true,
+  prevHistory: ContainerHistory[] = [],
 ): ReconcileResult {
+  // A container that has already LEFT must not be resurrected by a stale sheet.
+  // An older feed still lists boxes that have since moved; adding them back would
+  // silently inflate live pendency. So we skip any incoming row whose container
+  // departed at or after this feed's own timestamp. (If it genuinely comes back
+  // later, that feed is newer than the departure and it is added normally.)
+  const departedAt = new Map<string, number>();
+  prevHistory.forEach((h) => {
+    if (h.dir !== direction) return;
+    const prev = departedAt.get(h.no) ?? 0;
+    if (h.outAt > prev) departedAt.set(h.no, h.outAt);
+  });
+
   const incoming = new Map<string, ImportedContainer>();
-  incomingRows.forEach((c) => incoming.set(c.containerNo, c)); // last row wins → duplicates removed
+  let stale = 0;
+  incomingRows.forEach((c) => {
+    if ((departedAt.get(c.containerNo) ?? 0) >= feedAt) { stale++; return; }
+    incoming.set(c.containerNo, c); // last row wins → duplicates removed
+  });
   const existing = new Map(
     prevPool.filter((c) => (c.direction ?? "import") === direction).map((c) => [c.containerNo, c] as const),
   );
   let added = 0, updated = 0, cleared = 0;
-  const merged: ImportedContainer[] = [];
+  const stillPending: ImportedContainer[] = [];
+  const history: ContainerHistory[] = [];
 
   incoming.forEach((row, no) => {
     const prev = existing.get(no);
     if (prev) {
       updated++;
-      merged.push({ ...prev, ...row, status: "pending", clearedAt: undefined, firstSeenFile: prev.firstSeenFile ?? source, lastSeenFile: source });
+      stillPending.push({ ...prev, ...row, status: "pending", firstSeenAt: prev.firstSeenAt ?? feedAt, lastSeenFile: source, lastSeenAt: feedAt });
     } else {
       added++;
-      merged.push({ ...row, status: "pending", firstSeenFile: source, lastSeenFile: source });
+      stillPending.push({ ...row, status: "pending", firstSeenFile: source, firstSeenAt: feedAt, lastSeenFile: source, lastSeenAt: feedAt });
     }
   });
+
   existing.forEach((prev, no) => {
     if (incoming.has(no)) return;
-    if (prev.status === "cleared") { merged.push(prev); return; } // already gone
+    if (!isNewest) { stillPending.push(prev); return; } // an older file proves nothing about what has left
     cleared++;
-    merged.push({ ...prev, status: "cleared", clearedAt: now });
+    history.push({
+      no,
+      dir: direction,
+      teu: prev.teu,
+      term: prev.terminal,
+      flags: flagsOf(prev),
+      inAt: prev.firstSeenAt ?? feedAt,
+      outAt: feedAt,
+      dwellHrs: prev.pendencyHrs ?? Math.max(0, (feedAt - (prev.firstSeenAt ?? feedAt)) / 3600000),
+    });
   });
 
-  const keep = new Set(
-    merged.filter((c) => c.status === "cleared").sort((x, y) => (y.clearedAt ?? 0) - (x.clearedAt ?? 0)).slice(0, historyCap),
-  );
-  const dirPool = merged.filter((c) => c.status !== "cleared" || keep.has(c));
-  const pool = [...prevPool.filter((c) => (c.direction ?? "import") !== direction), ...dirPool];
-  return { pool, added, updated, cleared };
+  const pool = [...prevPool.filter((c) => (c.direction ?? "import") !== direction), ...stillPending];
+  return { pool, history, added, updated, cleared, stale };
 }
 
-/** Containers still pending — the only ones that count towards pendency. */
-export function livePool<T extends { status?: "pending" | "cleared" }>(pool: T[]): T[] {
+/**
+ * Containers still pending. The pool now holds only pending rows, so this is a
+ * safety net for state saved by an older build (which did keep cleared rows).
+ */
+export function livePool<T extends { status?: string }>(pool: T[]): T[] {
   return pool.filter((c) => c.status !== "cleared");
 }
 
@@ -256,6 +297,27 @@ export function extractDrivers(sheet: ParsedSheet): ImportedDriver[] {
       vehicleId: vCol >= 0 ? (r[vCol] || "").toUpperCase() || undefined : undefined,
     }];
   });
+}
+
+/**
+ * Work out WHEN a feed was taken, from its filename. The team's files carry the
+ * timestamp in the name (Import_Containers_18072026_1200.xlsx, pendency-2026-07-18-1530.csv).
+ * This is what lets a week of files be uploaded in any order and still stack up
+ * correctly: we clear containers only against the newest feed seen so far.
+ * Returns NaN when the name carries no date — caller then falls back to upload order.
+ */
+export function parseFeedTimestamp(filename: string): number {
+  const f = filename.replace(/\.[a-z]+$/i, "");
+  // ddmmyyyy or yyyymmdd, optionally followed by hhmm
+  let m = f.match(/(\d{2})(\d{2})(\d{4})[_\-. ]?(\d{2})?(\d{2})?(?!\d)/);
+  if (m && Number(m[1]) <= 31 && Number(m[2]) <= 12) {
+    return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+  }
+  m = f.match(/(\d{4})[_\-.]?(\d{2})[_\-.]?(\d{2})[_\-. ]?(\d{2})?[_\-.:]?(\d{2})?(?!\d)/);
+  if (m && Number(m[2]) <= 12 && Number(m[3]) <= 31) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+  }
+  return NaN;
 }
 
 /** Parse sheet-style dates: "7/5/26 10:00" (m/d/yy), "20-06-2026 08:30" (d-m-yyyy), ISO. NaN if unparseable. */

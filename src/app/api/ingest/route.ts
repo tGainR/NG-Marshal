@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { parseBuffer, guessKind, extractContainers, ImportedContainer, reconcilePool } from "@/lib/importer";
+import { parseBuffer, guessKind, extractContainers, ImportedContainer, reconcilePool, parseFeedTimestamp } from "@/lib/importer";
 
 const SITE_ID = "mundra-exim";
 
@@ -63,8 +63,16 @@ export async function POST(req: NextRequest) {
     if (!data) return NextResponse.json({ error: "no site snapshot yet — open the console once in supabase mode" }, { status: 409 });
     const state = data.state as { pool?: ImportedContainer[] } & Record<string, unknown>;
     // same reconciliation the console uses: additive, deduped, cleared-marking
-    const { pool, added, updated, cleared } = reconcilePool(state.pool ?? [], containers, direction, filename, Date.now() / 1000);
-    const next = { ...state, pool };
+    const feedAt = Number.isNaN(parseFeedTimestamp(filename)) ? Date.now() : parseFeedTimestamp(filename);
+    const prevNewest = (state.lastFeedAt as Record<string, number> | undefined)?.[direction] ?? 0;
+    const isNewest = feedAt >= prevNewest;
+    const { pool, history, added, updated, cleared } = reconcilePool(state.pool ?? [], containers, direction, filename, feedAt, isNewest, (state.history as never[]) ?? []);
+    const next = {
+      ...state,
+      pool,
+      history: [...history, ...((state.history as unknown[]) ?? [])].slice(0, 40000),
+      lastFeedAt: isNewest ? { ...(state.lastFeedAt as object ?? {}), [direction]: feedAt } : state.lastFeedAt,
+    };
     const { data: upd } = await sb
       .from("site_state")
       .update({ rev: Number(data.rev) + 1, state: next, updated_at: new Date().toISOString() })
