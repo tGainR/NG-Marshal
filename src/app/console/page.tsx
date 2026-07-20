@@ -5,7 +5,7 @@ import React, { useEffect, useState } from "react";
 import { useApp, RATE_CARD, SITE, SHIFT, HOT_JOBS, RETENTION } from "@/lib/store";
 import { DEPLOYMENT } from "@/lib/seed";
 import { fmtClock, fmtInr } from "@/lib/incentive";
-import { parseSheetDateMs, livePool } from "@/lib/importer";
+import { parseSheetDateMs, livePool, REPORT_FORMATS, formatById, guessFormat, extractContainersDiag, extractVehicles, extractDrivers } from "@/lib/importer";
 import YardTab from "./YardTab";
 import AnalyticsPanel from "./AnalyticsPanel";
 import ItvPlannerTab from "./ItvPlannerTab";
@@ -61,15 +61,7 @@ export default function ConsolePage() {
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<{
     fileName: string;
-    results: {
-      sheet: string;
-      kind: import("@/lib/importer").ImportKind;
-      headers: string[];
-      sample: string[][];
-      containers: import("@/lib/importer").ImportedContainer[];
-      vehicles: import("@/lib/importer").ImportedVehicle[];
-      drivers: import("@/lib/importer").ImportedDriver[];
-    }[];
+    sheets: import("@/lib/importer").ParsedSheet[];
   } | null>(null);
   const [siteMenu, setSiteMenu] = useState(false);
 
@@ -198,20 +190,12 @@ Current Pendency:${pendencyNow}
     setBulkResult(`Replayed ${loaded} file${loaded === 1 ? "" : "s"} oldest-first${skipped ? ` · ${skipped} had no container data` : ""}. Live pendency now matches the newest sheet.`);
   }
 
-  // shared import handler — the header Upload button is the only entry point
+  // shared import handler — the header Upload button is the only entry point.
+  // Parse only; the modal lets the user pick which report each sheet is before loading.
   async function handleImportFile(f: File) {
-    const { parseFile, guessKind, extractContainers, extractVehicles, extractDrivers } = await import("@/lib/importer");
+    const { parseFile } = await import("@/lib/importer");
     const sheets = await parseFile(f);
-    const results = sheets.map((sh) => ({ sh, kind: guessKind(sh) }));
-    setImportPreview({ fileName: f.name, results: results.map(({ sh, kind }) => ({
-      sheet: sh.name,
-      kind,
-      headers: sh.rows[0] ?? [],
-      sample: sh.rows.slice(1, 5),
-      containers: kind === "container_pool" ? extractContainers(sh, f.name) : [],
-      vehicles: kind === "itv_master" ? extractVehicles(sh) : [],
-      drivers: kind === "driver_master" ? extractDrivers(sh) : [],
-    })) });
+    setImportPreview({ fileName: f.name, sheets });
     // no tab change: the preview is a modal, so you stay where you were
   }
 
@@ -284,9 +268,11 @@ Current Pendency:${pendencyNow}
             </label>
             <button
               onClick={() => { setReportOpen(true); setCopied(false); }}
-              className="bg-[#1E9E5A] text-white text-xs font-bold px-3.5 py-2 rounded-md"
+              className="flex items-center gap-1.5 bg-[#25D366] text-white text-xs font-bold px-3.5 py-2 rounded-full"
+              title="Generate the deployment report and share it on WhatsApp — this sends OUT, it does not import"
             >
-              ⇪ Report → WhatsApp
+              <svg viewBox="0 0 32 32" width="14" height="14" fill="currentColor" aria-hidden><path d="M16 3C9.4 3 4 8.4 4 15c0 2.1.6 4.2 1.6 6L4 27l6.2-1.6c1.8 1 3.8 1.5 5.8 1.5 6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.8c-1.8 0-3.6-.5-5.1-1.4l-.4-.2-3.7 1 1-3.6-.2-.4c-1-1.6-1.5-3.4-1.5-5.2 0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 9.8-10 9.8zm5.5-7.3c-.3-.2-1.8-.9-2-1s-.5-.2-.7.2-.8 1-1 1.2-.4.3-.7.1c-1.8-.9-3-1.6-4.2-3.6-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5s-.7-1.7-1-2.3c-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-1 1-1.3 2.3-.8 3.9.5 1.6 1.6 3.1 1.8 3.3.2.3 3.1 4.8 7.6 6.5 2.8 1.1 3.4.9 4 .8.6-.1 1.8-.7 2-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.2-.6-.4z"/></svg>
+              Share to WhatsApp
             </button>
             <button
               onClick={() => dispatch({ type: "resetDemo" })}
@@ -463,71 +449,7 @@ Current Pendency:${pendencyNow}
           </div>
         )}
         {importPreview && (
-          <div className="fixed inset-0 z-50 bg-black/45 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setImportPreview(null)}>
-          <div onClick={(e) => e.stopPropagation()} className="bg-white border-2 border-[#E8641B] rounded-xl p-4 mt-10 mb-10 w-full max-w-3xl text-[12px] flex flex-col gap-2 shadow-2xl">
-            <p className="text-[10px] uppercase tracking-[0.11em] font-bold text-[#E8641B]">Review before loading</p>
-            <p className="text-[11.5px] text-[#5C6B80] -mt-1">Loading is <b>additive</b>: new containers are added, ones already in the system are updated, and any that are no longer in the file are marked cleared. Nothing is wiped.</p>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-bold font-mono text-[12px]">📄 {importPreview.fileName}</p>
-              {importPreview.results.filter((r) => r.kind === "container_pool").length > 1 && (
-                <button
-                  onClick={() => {
-                    const all = importPreview.results.filter((r) => r.kind === "container_pool").flatMap((r) => r.containers);
-                    dispatch({ type: "importContainers", list: all, source: `${importPreview.fileName} (all sheets)` });
-                    setImportPreview(null);
-                  }}
-                  className="text-[11px] font-bold text-white bg-[#1F3864] rounded px-3 py-1.5"
-                >
-                  Load ALL sheets together ▸
-                </button>
-              )}
-            </div>
-            {importPreview.results.map((r, i) => {
-              const dir = r.containers[0]?.direction;
-              const what =
-                r.kind === "container_pool" ? (dir === "export" ? "EXPORT cutoff list" : "IMPORT pendency list")
-                : r.kind === "itv_master" ? "ITV master"
-                : r.kind === "driver_master" ? "Driver master"
-                : "not recognised";
-              return (
-                <div key={i} className="border-t border-[#EDF0F5] pt-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      Sheet <b className="font-mono">{r.sheet}</b> → <b>{what}</b>
-                      {r.kind === "container_pool" && <> · {r.containers.length} containers · {r.containers.length ? Math.round((r.containers.filter((c) => c.valid).length / r.containers.length) * 100) : 0}% valid container numbers</>}
-                      {r.kind === "itv_master" && <> · {r.vehicles.length} ITVs</>}
-                      {r.kind === "driver_master" && <> · {r.drivers.length} drivers</>}
-                    </span>
-                    {r.kind !== "unknown" && (
-                      <button
-                        onClick={() => {
-                          if (r.kind === "container_pool") dispatch({ type: "importContainers", list: r.containers, source: importPreview.fileName });
-                          if (r.kind === "itv_master") dispatch({ type: "importVehicles", list: r.vehicles });
-                          if (r.kind === "driver_master") dispatch({ type: "importDrivers", list: r.drivers });
-                          setImportPreview(null);
-                        }}
-                        className="text-[11px] font-bold text-white bg-[#1E9E5A] rounded px-3 py-1.5"
-                      >
-                        Load into system ▸
-                      </button>
-                    )}
-                  </div>
-                  <div className="overflow-x-auto mt-1.5">
-                    <table className="text-[10.5px] font-mono whitespace-nowrap">
-                      <tbody>
-                        <tr>{r.headers.slice(0, 8).map((h, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5 font-bold bg-[#F6F8FB]">{h || "—"}</td>)}</tr>
-                        {r.sample.map((row, k) => (
-                          <tr key={k}>{row.slice(0, 8).map((c, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5">{c || "—"}</td>)}</tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-            <button onClick={() => setImportPreview(null)} className="text-[11px] text-[#5C6B80] self-start">Cancel</button>
-          </div>
-          </div>
+          <ImportModal fileName={importPreview.fileName} sheets={importPreview.sheets} onClose={() => setImportPreview(null)} />
         )}
         {tab === "pendency" && <PendencySummaryTab site={site} />}
         {tab === "dashboard" && <AnalyticsPanel />}
@@ -800,6 +722,127 @@ Current Pendency:${pendencyNow}
 
 
 // ── Masters & settings: vendors, ITV/equipment master, drivers, daily driver↔ITV mapping, rate card ──
+// ── Import modal — pick which report each sheet is, see diagnostics, then load ──
+// The team picks the report format explicitly (rather than us guessing wrong), and
+// a diagnostics line shows exactly what was detected so a stubborn file is never a
+// silent failure.
+function ImportModal({ fileName, sheets, onClose }: { fileName: string; sheets: import("@/lib/importer").ParsedSheet[]; onClose: () => void }) {
+  const { dispatch } = useApp();
+  // per-sheet chosen format id (default = best guess)
+  const [choice, setChoice] = useState<Record<number, string>>(() => {
+    const init: Record<number, string> = {};
+    sheets.forEach((sh, i) => { init[i] = guessFormat(sh)?.id ?? "skip"; });
+    return init;
+  });
+
+  const built = sheets.map((sh, i) => {
+    const fmt = formatById(choice[i]);
+    if (!fmt) return { sh, fmt: null as ReturnType<typeof formatById> | null, containers: [], vehicles: [], drivers: [], diag: null as ReturnType<typeof extractContainersDiag>["diag"] | null };
+    if (fmt.kind === "container_pool") {
+      const { containers, diag } = extractContainersDiag(sh, fileName, fmt.direction);
+      return { sh, fmt, containers, vehicles: [], drivers: [], diag };
+    }
+    if (fmt.kind === "itv_master") return { sh, fmt, containers: [], vehicles: extractVehicles(sh), drivers: [], diag: null };
+    return { sh, fmt, containers: [], vehicles: [], drivers: extractDrivers(sh), diag: null };
+  });
+
+  const containerSheets = built.filter((b) => b.fmt?.kind === "container_pool" && b.containers.length);
+
+  const loadOne = (b: (typeof built)[number]) => {
+    if (!b.fmt) return;
+    if (b.fmt.kind === "container_pool") dispatch({ type: "importContainers", list: b.containers, source: fileName });
+    if (b.fmt.kind === "itv_master") dispatch({ type: "importVehicles", list: b.vehicles });
+    if (b.fmt.kind === "driver_master") dispatch({ type: "importDrivers", list: b.drivers });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/45 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white border-2 border-[#E8641B] rounded-xl p-4 mt-10 mb-10 w-full max-w-3xl text-[12px] flex flex-col gap-2 shadow-2xl">
+        <p className="text-[10px] uppercase tracking-[0.11em] font-bold text-[#E8641B]">Review before loading</p>
+        <p className="text-[11.5px] text-[#5C6B80] -mt-1">Pick which report each sheet is, then load. Loading is <b>additive</b> — new rows added, known rows updated, ones gone from the file marked cleared. Nothing is wiped.</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-bold font-mono text-[12px]">📄 {fileName}</p>
+          {containerSheets.length > 1 && (
+            <button
+              onClick={() => {
+                const all = containerSheets.flatMap((b) => b.containers);
+                dispatch({ type: "importContainers", list: all, source: `${fileName} (all sheets)` });
+                onClose();
+              }}
+              className="text-[11px] font-bold text-white bg-[#1F3864] rounded px-3 py-1.5"
+            >Load ALL {containerSheets.length} sheets together ▸</button>
+          )}
+        </div>
+
+        {built.map((b, i) => {
+          const fmt = b.fmt;
+          const isContainer = fmt?.kind === "container_pool";
+          const count = isContainer ? b.containers.length : fmt?.kind === "itv_master" ? b.vehicles.length : fmt?.kind === "driver_master" ? b.drivers.length : 0;
+          return (
+            <div key={i} className="border-t border-[#EDF0F5] pt-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span>Sheet <b className="font-mono">{b.sh.name}</b> is</span>
+                  {/* THE REPORT-TYPE PICKER — the user says which report this is */}
+                  <select
+                    value={choice[i]}
+                    onChange={(e) => setChoice((c) => ({ ...c, [i]: e.target.value }))}
+                    className="border border-[#1F3864] rounded-md px-2 py-1.5 text-[12px] font-bold bg-white"
+                  >
+                    {REPORT_FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    <option value="skip">— skip this sheet —</option>
+                  </select>
+                </div>
+                {fmt && count > 0 && (
+                  <button onClick={() => loadOne(b)} className="text-[11px] font-bold text-white bg-[#1E9E5A] rounded px-3 py-1.5">Load into system ▸</button>
+                )}
+              </div>
+
+              {fmt && <p className="text-[11px] text-[#5C6B80] mt-1">{fmt.blurb}</p>}
+
+              {/* diagnostics — what was actually detected */}
+              {isContainer && b.diag && (
+                <div className={`mt-1.5 rounded-md px-2.5 py-2 text-[11px] ${b.diag.extracted === 0 ? "bg-[#FBEAE8] text-[#7A2318]" : "bg-[#F2F7FF] text-[#2A3F63]"}`}>
+                  <b>{b.diag.extracted}</b> containers read from {b.diag.bodyRows} rows · direction <b>{b.diag.direction.toUpperCase()}</b>
+                  {b.diag.droppedNoContainer > 0 && <> · {b.diag.droppedNoContainer} rows had no container no</>}
+                  {b.diag.droppedBadFormat > 0 && <> · {b.diag.droppedBadFormat} not a valid container format</>}
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {b.diag.mapped.map((m) => (
+                      <span key={m.field} className={m.column ? "" : "text-[#C0392B]"}>
+                        {m.field}: <b>{m.column ?? "not found"}</b>
+                      </span>
+                    ))}
+                  </div>
+                  {b.diag.note && <p className="mt-1 italic">{b.diag.note}</p>}
+                  {b.diag.extracted === 0 && (
+                    <p className="mt-1 font-semibold">Nothing loaded. Check the sheet has a container-number column, or pick a different report above. If it still won&apos;t map, send us this file and screenshot.</p>
+                  )}
+                </div>
+              )}
+              {fmt?.kind === "itv_master" && <p className="text-[11px] text-[#5C6B80] mt-1">{b.vehicles.length} ITVs detected.</p>}
+              {fmt?.kind === "driver_master" && <p className="text-[11px] text-[#5C6B80] mt-1">{b.drivers.length} drivers detected.</p>}
+
+              {/* raw preview */}
+              <div className="overflow-x-auto mt-1.5">
+                <table className="text-[10.5px] font-mono whitespace-nowrap">
+                  <tbody>
+                    <tr>{(b.sh.rows[0] ?? []).slice(0, 8).map((h, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5 font-bold bg-[#F6F8FB]">{h || "—"}</td>)}</tr>
+                    {b.sh.rows.slice(1, 5).map((row, k) => (
+                      <tr key={k}>{row.slice(0, 8).map((c, j) => <td key={j} className="border border-[#EDF0F5] px-1.5 py-0.5">{c || "—"}</td>)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+        <button onClick={onClose} className="text-[11px] text-[#5C6B80] self-start">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Data & storage — what we keep, what it costs, what it answers ───────────
 function StoragePanel() {
   const { state } = useApp();

@@ -327,3 +327,16 @@ The driver app will take time to adopt, so the shift can't wait on it. Added a *
 - **Dashboard KPI** switches from "ITVs running" to **"ITVs live · N confirmed · of fleet"** once the roster starts. **"↺ New shift"** clears all marks to rebuild the roster.
 
 The intended end state, now supported: the vendor supervisor's marking and the driver app both say live, they match, and the ITV is Confirmed — and the roster of who's available drives planning at the start of each shift.
+
+## 20 Jul 2026 — Import: report-type picker, diagnostics, and fixing "won't import"
+
+The team's real files weren't importing reliably because the app was guessing the report type from headers/filename, which breaks when a terminal renames a column. Reworked the upload flow:
+
+- **Report-type dropdown** in the import modal — the user says which report each sheet is (Import pendency / Export cut-off / ITV master / Driver master). The chosen format **forces** kind and direction; no more guessing wrong. `REPORT_FORMATS` registry in `importer.ts` is the single place to edit when the real formats are confirmed — they carry the current known column shapes as hints.
+- **Diagnostics panel** — every container sheet shows exactly what was detected: N read from M rows, direction, which column mapped to Container/Size/Terminal/etc. (unmapped ones in red), and rows dropped with the reason. A 0-container result says plainly "Nothing loaded — check for a container column, or pick a different report; if it still won't map, send us this file + screenshot." A stubborn file is never a silent failure now.
+- **More robust extraction** — deeper header-row search (skips title/blank rows before the real header), and column matching stays fuzzy (includes-based). Verified: a file with a title row + renamed headers (CONTAINER NUMBER, DWELL HRS) read 40/40; a vessel-schedule file correctly reported 0 with a clear reason.
+
+## 20 Jul 2026 — Import/export toggle on the Yard; WhatsApp button is now a share action
+
+- **Yard tab** gained an **All / Import / Export** segmented toggle, so you can see just the import or just the export blocks (verified: 45 all → 30 import / 15 export). The Pendency board already shows both directions side by side, so it needs no toggle.
+- **"Report → WhatsApp"** read like an import button (the ⇪ upload glyph). Replaced with a **WhatsApp icon + "Share to WhatsApp"** on a rounded WhatsApp-green pill — clearly a send-out action, visually distinct from the orange "⬆ Upload file".

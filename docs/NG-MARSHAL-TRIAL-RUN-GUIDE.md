@@ -34,6 +34,7 @@ This is the loop the docs desk and shift incharge will run every day.
 ### A1. Feed the pendency (the every-3-4-hours step)
 - Click **⬆ Upload file** (top-right, on every screen).
 - Drop the pendency file the terminal sends. **You can drop several at once** — to simulate a day, select the last 4–8 files together; they replay oldest-first and the live pendency ends on the newest one.
+- In the preview, **pick which report each sheet is** from the dropdown (Import pendency / Export cut-off / ITV master / Driver master). The app shows a **diagnostics line** — how many containers it read, the direction, and which columns it mapped — so you can see it understood the file before loading. If a sheet reads 0, the message tells you why (usually a missing container column) — send us that file and screenshot if it won't map.
 - Each upload reports exactly what changed: `IMPORT 18 Jul 12:00: +38 new · 402 updated · 24 cleared · 460 pending now`.
   - **new** = containers that appeared for the first time.
   - **updated** = already in the system, figures refreshed (no duplicates — ever).
@@ -59,7 +60,7 @@ This is the loop the docs desk and shift incharge will run every day.
 ### A4. Assign and confirm (the ITV Planner)
 - Go to **ITV Planner** — one row per ITV. Change any "send to" by hand.
 - Each assignment is **◇ tentative** until you click **confirm** (or "Confirm all"). Once confirmed, auto-plan won't touch it. This is your sign-off.
-- Generate the **⇪ Report → WhatsApp** to see the deployment message in your usual format.
+- Use **Share to WhatsApp** (top-right) to see the deployment message in your usual format.
 
 ### A5. Watch it come back
 - As the field marks trips (Part B), the **Dashboard** shows trips in flight and fleet status, and its **Analytics** panel fills in: TAT, throughput, ITV-wise and driver-wise. After a couple of feeds you'll see real turnaround times.

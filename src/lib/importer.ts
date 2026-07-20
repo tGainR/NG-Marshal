@@ -188,6 +188,69 @@ function findCol(headers: string[], keys: string[]): number {
   return -1;
 }
 
+// ── Report formats ───────────────────────────────────────────────────────────
+// The team uploads specific named reports (import pendency, export cut-off, ITV
+// master, driver master). Rather than only guessing from the columns — which fails
+// when a terminal renames a header — the uploader lets them PICK which report it is,
+// and we map deterministically. The column lists below are the CURRENT known shapes;
+// they are hints, not hard requirements, and are expected to change over time. When
+// the real formats are confirmed, edit REPORT_FORMATS here — no other code changes.
+export interface ReportFormat {
+  id: string;
+  label: string;
+  kind: ImportKind;
+  direction?: "import" | "export";
+  blurb: string;
+  columns: string[]; // known/expected headers — shown to the user, used to find the header row
+}
+
+export const REPORT_FORMATS: ReportFormat[] = [
+  {
+    id: "import_pendency",
+    label: "Import pendency (3-hourly)",
+    kind: "container_pool",
+    direction: "import",
+    blurb: "The terminal's import DPD pendency feed — one row per pending import container.",
+    columns: ["Container No", "Ctr Size", "Terminal", "Cat Cd", "Scan Flg", "Pendency Hrs", "Location", "Deliverable Pty"],
+  },
+  {
+    id: "export_cutoff",
+    label: "Export cut-off",
+    kind: "container_pool",
+    direction: "export",
+    blurb: "Export containers awaiting movement, by gate cut-off.",
+    columns: ["Container No", "Ctr Size", "Terminal", "Cut-off", "Stuffing", "Location"],
+  },
+  {
+    id: "itv_master",
+    label: "ITV master",
+    kind: "itv_master",
+    blurb: "The fleet list — call signs, registrations, vendor, tags.",
+    columns: ["Call sign", "Registration", "Vendor", "Tags", "Driver"],
+  },
+  {
+    id: "driver_master",
+    label: "Driver master",
+    kind: "driver_master",
+    blurb: "Drivers — name, phone (needed for app login), vendor, ITV.",
+    columns: ["Driver Name", "Phone", "Vendor", "ITV", "Note"],
+  },
+];
+
+export const formatById = (id?: string) => REPORT_FORMATS.find((f) => f.id === id);
+
+/** The report format that best matches a sheet, for defaulting the picker. */
+export function guessFormat(sheet: ParsedSheet): ReportFormat | undefined {
+  const kind = guessKind(sheet);
+  if (kind === "container_pool") {
+    // decide direction the same way extractContainers does
+    const headers = sheet.rows[0] ?? [];
+    const hasCutoff = findCol(headers, ["cutoff", "cut-off", "stuffing"]) >= 0;
+    return formatById(hasCutoff ? "export_cutoff" : "import_pendency");
+  }
+  return REPORT_FORMATS.find((f) => f.kind === kind);
+}
+
 export function guessKind(sheet: ParsedSheet): ImportKind {
   const headers = sheet.rows[0] ?? [];
   const hasContainer = findCol(headers, ["container", "cntr", "cont"]) >= 0;
@@ -204,8 +267,44 @@ export function guessKind(sheet: ParsedSheet): ImportKind {
   return "unknown";
 }
 
-export function extractContainers(sheet: ParsedSheet, filenameHint = ""): ImportedContainer[] {
-  const headers = sheet.rows[0];
+// Diagnostics so a failed import is never silent — the modal shows exactly what was
+// detected, and the team can send us this if a real file won't map.
+export interface ExtractDiag {
+  headerRow: string[];
+  mapped: { field: string; column: string | null }[];
+  bodyRows: number;
+  extracted: number;
+  droppedNoContainer: number;
+  droppedBadFormat: number;
+  direction: "import" | "export";
+  note?: string;
+}
+
+export function extractContainers(sheet: ParsedSheet, filenameHint = "", forcedDir?: "import" | "export"): ImportedContainer[] {
+  return extractContainersDiag(sheet, filenameHint, forcedDir).containers;
+}
+
+export function extractContainersDiag(
+  sheet: ParsedSheet,
+  filenameHint = "",
+  forcedDir?: "import" | "export",
+): { containers: ImportedContainer[]; diag: ExtractDiag } {
+  // Header row: normally row 0 (parseBuffer already found it). But real files carry
+  // title rows and merged cells that fool detection, so if row 0 has no container
+  // column, scan deeper for the row that actually looks like the header.
+  let headerIdx = 0;
+  let headers = sheet.rows[0] ?? [];
+  let note: string | undefined;
+  if (findCol(headers, ["container", "cntr", "cont"]) < 0) {
+    for (let i = 1; i < Math.min(sheet.rows.length, 15); i++) {
+      if (findCol(sheet.rows[i], ["container", "cntr", "cont"]) >= 0) {
+        headerIdx = i; headers = sheet.rows[i];
+        note = `Header wasn't the first row — used row ${i + 1} (the one with a container column).`;
+        break;
+      }
+    }
+  }
+
   const cCol = findCol(headers, ["container", "cntr", "cont"]);
   const sCol = findCol(headers, ["ctrsize", "size", "iso", "type", "ft"]);
   const teuCol = findCol(headers, ["teu"]);
@@ -216,25 +315,29 @@ export function extractContainers(sheet: ParsedSheet, filenameHint = ""): Import
   const locCol = findCol(headers, ["location", "yard"]);
   const pendCol = findCol(headers, ["pendencyhrs", "pendency", "dwell"]);
   const ptyCol = findCol(headers, ["deliverablepty", "party", "pty"]);
-  // direction: filename wins (Import_Containers_… / EXPORT_…), else a GATE CUT-OFF/stuffing column means export
+
+  // Direction: a chosen report format wins; else filename; else a cut-off/stuffing column.
   const hint = filenameHint.toLowerCase();
-  const direction: "import" | "export" =
-    /export|cutoff|cut-off/.test(hint) ? "export"
+  const direction: "import" | "export" = forcedDir
+    ? forcedDir
+    : /export|cutoff|cut-off/.test(hint) ? "export"
     : /import|pendency|dpd/.test(hint) ? "import"
     : cutCol >= 0 || findCol(headers, ["stuffing"]) >= 0 ? "export"
     : "import";
+
   const out: ImportedContainer[] = [];
-  const body = sheet.rows.slice(1);
+  const body = sheet.rows.slice(headerIdx + 1);
+  let droppedNoContainer = 0, droppedBadFormat = 0;
+
   body.forEach((r) => {
-    // container no from mapped column, else scan the row
     let no = cCol >= 0 ? r[cCol] : "";
     if (!isValidContainerNo(no)) {
-      const hit = r.find((c) => isValidContainerNo(c));
+      const hit = r.find((c) => isValidContainerNo(c)); // fall back to any valid-looking cell
       if (hit) no = hit;
     }
-    if (!no) return;
-    const clean = no.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (!/^[A-Z]{4}\d{7}$/.test(clean)) return;
+    const clean = (no || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!clean) { droppedNoContainer++; return; }
+    if (!/^[A-Z]{4}\d{7}$/.test(clean)) { droppedBadFormat++; return; } // ISO 6346 shape (4 letters + 7 digits)
     const sizeRaw = sCol >= 0 ? r[sCol] : "";
     const size: "20" | "40" = /^4|40/.test(sizeRaw) ? "40" : "20";
     const teuRaw = teuCol >= 0 ? parseInt(r[teuCol], 10) : NaN;
@@ -254,7 +357,28 @@ export function extractContainers(sheet: ParsedSheet, filenameHint = ""): Import
       valid: isValidContainerNo(clean),
     });
   });
-  return out;
+
+  const col = (i: number) => (i >= 0 ? headers[i] || `col ${i + 1}` : null);
+  const diag: ExtractDiag = {
+    headerRow: headers,
+    mapped: [
+      { field: "Container", column: col(cCol) },
+      { field: "Size", column: col(sCol) },
+      { field: "Terminal", column: col(tCol) },
+      { field: "Category", column: col(catCol) },
+      { field: "Scan flag", column: col(scanCol) },
+      { field: "Pendency hrs", column: col(pendCol) },
+      { field: "Location", column: col(locCol) },
+      { field: "Cut-off", column: col(cutCol) },
+    ],
+    bodyRows: body.length,
+    extracted: out.length,
+    droppedNoContainer,
+    droppedBadFormat,
+    direction,
+    note: cCol < 0 ? (note ?? "No container column found — scanned each row for a container number instead.") : note,
+  };
+  return { containers: out, diag };
 }
 
 export function extractVehicles(sheet: ParsedSheet): ImportedVehicle[] {

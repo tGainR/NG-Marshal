@@ -14,37 +14,53 @@ import { buildYard, blockColour, ColourBy, COLOUR_BY_LABEL, BlockSummary, parseP
 export default function YardTab() {
   const { state } = useApp();
   const [by, setBy] = useState<ColourBy>("dwell");
+  const [dir, setDir] = useState<"all" | "import" | "export">("all");
   const [open, setOpen] = useState<string | null>(null);
 
-  const pool = livePool(state.pool);
+  const allLive = livePool(state.pool);
+  const pool = dir === "all" ? allLive : allLive.filter((c) => (c.direction ?? "import") === dir);
   const yard = buildYard(pool);
   const busiest = Math.max(1, ...yard.blocks.map((b) => b.containers));
   const openBlock = yard.blocks.find((b) => b.block === open);
 
-  if (!yard.blocks.length) {
+  if (!allLive.length) {
     return (
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-8 mt-4 text-center">
         <p className="text-[15px] font-bold text-[#16243A]">No yard positions yet</p>
         <p className="text-[12.5px] text-[#5C6B80] mt-1.5 max-w-lg mx-auto">
           The yard map builds itself from the <b>Location</b> column of the pendency feed
           (positions like <code className="font-mono">1T22C.3</code>). Upload a pendency file and the blocks appear here.
-          {yard.unplaced > 0 && <> {yard.unplaced} container{yard.unplaced === 1 ? "" : "s"} in the system have no readable position.</>}
         </p>
       </div>
     );
   }
+
+  const DirToggle = () => (
+    <div className="flex items-center gap-1 bg-[#F6F8FB] border border-[#D8DEE7] rounded-lg p-0.5">
+      {(["all", "import", "export"] as const).map((d) => (
+        <button
+          key={d}
+          onClick={() => setDir(d)}
+          className={`text-[11.5px] font-bold px-2.5 py-1 rounded-md capitalize ${dir === d ? "bg-[#1F3864] text-white" : "text-[#5C6B80]"}`}
+        >{d}</button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="mt-4 flex flex-col gap-4">
       {/* Colour-by selector — one switchable dimension, so no view is overloaded */}
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Yard map</p>
-            <p className="text-[12px] text-[#5C6B80] mt-0.5">
-              {yard.blocks.length} blocks · {pool.length} containers · {yard.totalTeu.toLocaleString("en-IN")} TEU
-              {yard.unplaced > 0 && <> · <b className="text-[#C0392B]">{yard.unplaced} with no position</b></>}
-            </p>
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Yard map</p>
+              <p className="text-[12px] text-[#5C6B80] mt-0.5">
+                {yard.blocks.length} blocks · {pool.length} containers · {yard.totalTeu.toLocaleString("en-IN")} TEU
+                {yard.unplaced > 0 && <> · <b className="text-[#C0392B]">{yard.unplaced} with no position</b></>}
+              </p>
+            </div>
+            <DirToggle />
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-[#5C6B80] mr-1">Colour by</span>
@@ -63,6 +79,10 @@ export default function YardTab() {
         </div>
 
         <Legend by={by} />
+
+        {!yard.blocks.length && (
+          <p className="text-[12.5px] text-[#5C6B80] py-6 text-center">No {dir} containers with a yard position right now.</p>
+        )}
 
         {/* the blocks */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 mt-3.5">
