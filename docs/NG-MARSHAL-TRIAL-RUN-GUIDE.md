@@ -34,7 +34,9 @@ This is the loop the docs desk and shift incharge will run every day.
 ### A1. Feed the pendency (the every-3-4-hours step)
 - Click **⬆ Upload file** (top-right, on every screen).
 - Drop the pendency file the terminal sends. **You can drop several at once** — to simulate a day, select the last 4–8 files together; they replay oldest-first and the live pendency ends on the newest one.
-- In the preview, **pick which report each sheet is** from the dropdown (Import pendency / Export cut-off / ITV master / Driver master). The app shows a **diagnostics line** — how many containers it read, the direction, and which columns it mapped — so you can see it understood the file before loading. If a sheet reads 0, the message tells you why (usually a missing container column) — send us that file and screenshot if it won't map.
+- In the preview, **pick which report each sheet is** from the dropdown. The real files are already trained:
+  - **Import** — the DPD CSVs (`Import_Containers_DPD_AMTE_…_HHMMhrs.csv`). One sheet, auto-detects as *Import pendency*. To load a week of history, select all the day's CSVs at once — they replay oldest-first.
+  - **Export** — the daily XLSX (`Mon 13-Jul-26.xlsx`). It has **5 sheets**; load **Sheet1** (the combined list with TERMINAL + GATE CUT-OFF) as the export pendency. The per-terminal sheets are subsets of it, so don't load them separately. The app shows a **diagnostics line** — how many containers it read, the direction, and which columns it mapped — so you can see it understood the file before loading. If a sheet reads 0, the message tells you why (usually a missing container column) — send us that file and screenshot if it won't map.
 - Each upload reports exactly what changed: `IMPORT 18 Jul 12:00: +38 new · 402 updated · 24 cleared · 460 pending now`.
   - **new** = containers that appeared for the first time.
   - **updated** = already in the system, figures refreshed (no duplicates — ever).

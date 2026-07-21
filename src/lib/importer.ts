@@ -207,19 +207,19 @@ export interface ReportFormat {
 export const REPORT_FORMATS: ReportFormat[] = [
   {
     id: "import_pendency",
-    label: "Import pendency (3-hourly)",
+    label: "Import pendency — DPD (3-hourly CSV)",
     kind: "container_pool",
     direction: "import",
-    blurb: "The terminal's import DPD pendency feed — one row per pending import container.",
-    columns: ["Container No", "Ctr Size", "Terminal", "Cat Cd", "Scan Flg", "Pendency Hrs", "Location", "Deliverable Pty"],
+    blurb: "The Adani import DPD pendency feed (Import_Containers_DPD_… .csv) — one row per pending import container.",
+    columns: ["Container_No", "CtrSize", "TEU", "Cat_Cd", "Pendency(Hrs)", "Scan_Flg", "Terminal", "Location", "Deliverable_Pty"],
   },
   {
     id: "export_cutoff",
-    label: "Export cut-off",
+    label: "Export cut-off (daily xlsx)",
     kind: "container_pool",
     direction: "export",
-    blurb: "Export containers awaiting movement, by gate cut-off.",
-    columns: ["Container No", "Ctr Size", "Terminal", "Cut-off", "Stuffing", "Location"],
+    blurb: "Export containers by gate cut-off (the daily 'Mon 13-Jul-26.xlsx' sheets). Use the sheet with CONT + TERMINAL + GATE CUT-OFF; skip the stuffing-detail sheet.",
+    columns: ["CONT", "SIZE", "TERMINAL", "GATE CUT-OFF", "LOCATION", "CHA NAME", "VESSEL NAME"],
   },
   {
     id: "itv_master",
@@ -243,10 +243,16 @@ export const formatById = (id?: string) => REPORT_FORMATS.find((f) => f.id === i
 export function guessFormat(sheet: ParsedSheet): ReportFormat | undefined {
   const kind = guessKind(sheet);
   if (kind === "container_pool") {
-    // decide direction the same way extractContainers does
     const headers = sheet.rows[0] ?? [];
-    const hasCutoff = findCol(headers, ["cutoff", "cut-off", "stuffing"]) >= 0;
-    return formatById(hasCutoff ? "export_cutoff" : "import_pendency");
+    // A pendency list has a terminal, a cut-off, or a pendency column. A sheet with
+    // containers but none of those is a DETAIL sheet (e.g. an export stuffing-package
+    // list) — default it to "skip" so it isn't loaded and doesn't clobber terminals.
+    const hasTerminal = findCol(headers, ["terminal", "port"]) >= 0;
+    const hasCutoff = findCol(headers, ["gatecutoff", "cutoff", "cut-off"]) >= 0;
+    const hasPendency = findCol(headers, ["pendencyhrs", "pendency", "dwell"]) >= 0;
+    if (!hasTerminal && !hasCutoff && !hasPendency) return undefined; // detail sheet → skip
+    // import feeds carry a pendency/scan column; export lists carry a gate cut-off
+    return formatById(hasPendency || findCol(headers, ["scanflg", "scan"]) >= 0 ? "import_pendency" : "export_cutoff");
   }
   return REPORT_FORMATS.find((f) => f.kind === kind);
 }
@@ -309,7 +315,7 @@ export function extractContainersDiag(
   const sCol = findCol(headers, ["ctrsize", "size", "iso", "type", "ft"]);
   const teuCol = findCol(headers, ["teu"]);
   const tCol = findCol(headers, ["terminal", "port"]);
-  const catCol = findCol(headers, ["catcd", "category", "impexp", "cat"]);
+  const catCol = findCol(headers, ["catcd", "category", "impexp"]); // NOT bare "cat" — it matches "loCATion"
   const cutCol = findCol(headers, ["cutoff", "validity", "deadline"]);
   const scanCol = findCol(headers, ["scanflg", "scan"]);
   const locCol = findCol(headers, ["location", "yard"]);
@@ -440,6 +446,16 @@ export function parseFeedTimestamp(filename: string): number {
   m = f.match(/(\d{4})[_\-.]?(\d{2})[_\-.]?(\d{2})[_\-. ]?(\d{2})?[_\-.:]?(\d{2})?(?!\d)/);
   if (m && Number(m[2]) <= 12 && Number(m[3]) <= 31) {
     return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
+  }
+  // dd-Mmm-yy / dd Mmm yyyy — e.g. the export "Mon 13-Jul-26.xlsx" files
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  m = f.match(/(\d{1,2})[-\s]([A-Za-z]{3,})[-\s.](\d{2,4})/);
+  if (m) {
+    const mon = MONTHS.indexOf(m[2].slice(0, 3).toLowerCase());
+    if (mon >= 0) {
+      const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+      return new Date(y, mon, Number(m[1])).getTime();
+    }
   }
   return NaN;
 }

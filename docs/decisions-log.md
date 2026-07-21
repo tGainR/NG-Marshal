@@ -340,3 +340,19 @@ The team's real files weren't importing reliably because the app was guessing th
 
 - **Yard tab** gained an **All / Import / Export** segmented toggle, so you can see just the import or just the export blocks (verified: 45 all → 30 import / 15 export). The Pendency board already shows both directions side by side, so it needs no toggle.
 - **"Report → WhatsApp"** read like an import button (the ⇪ upload glyph). Replaced with a **WhatsApp icon + "Share to WhatsApp"** on a rounded WhatsApp-green pill — clearly a send-out action, visually distinct from the orange "⬆ Upload file".
+
+## 21 Jul 2026 — Trained on the real Adani files; verified end-to-end with a week of data
+
+Received the team's real files and confirmed the formats:
+- **Import — DPD pendency (CSV, 3-hourly):** `Import_Containers_DPD_AMTE_YYYY-MM-DD_HHMMhrs.csv`. Columns: `Container_No, CtrSize, TEU, Cat_Cd, Pendency(Hrs), Scan_Flg, Terminal, Location, Deliverable_Pty` (+ ISO, vessel, seals, entry/exit times). One sheet, ~240 rows. Maps cleanly — read 239/239.
+- **Export — cut-off (XLSX, daily):** `Mon 13-Jul-26.xlsx`, **5 sheets**. Sheet1 is the combined list (CONT, SIZE, TERMINAL, GATE CUT-OFF, LOCATION, CHA NAME, VESSEL…); Sheet2/3/5 are per-terminal (CT2/CT3/CT4) subsets; Sheet4 is a detailed stuffing list that also carries TERMINAL + GATE CUT-OFF further right. Column is `CONT`, not `Container_No`.
+
+Fixes made from the real data:
+- **`Cat_Cd`/category bug:** the loose `"cat"` matcher was matching lo**cat**ion; dropped it (import Cat_Cd still maps via `catcd`).
+- **Feed timestamps:** added `dd-Mmm-yy` parsing so the export files (`Mon 13-Jul-26`) get a real date; import filenames already parsed.
+- **`REPORT_FORMATS`** column hints updated to the real headers; blurbs name the actual files.
+- **Multi-sheet export caution:** the export sheets overlap (Sheet1 ≈ per-terminal sheets combined), so loading them one-by-one would wrongly clear across sheets. Guidance: load **Sheet1** (the combined list) as the export pendency; the app defaults each container sheet sensibly and the picker lets you choose.
+
+**Verified with the full week in the browser:** replayed all 41 import CSVs oldest-first → 239 pending (matches the newest sheet), 2,171 in history, split CT2 67 / CT3 105 / CT4 30 / T2 37; loaded export Sheet1 → 90 across MICT/T2/CT2/CT3/CT4. The EXIM pendency report, Yard map (38 real blocks / 329 containers), and Analytics (1,451 cleared / TAT) all populated correctly from the real files.
+
+**Note on "filling the data":** app state lives in each browser's local storage (no shared backend yet), so data loaded in one browser isn't visible in another. To populate their own console the team drags the week's import CSVs onto **⬆ Upload file** (they replay oldest-first) and loads the export xlsx's Sheet1. A shared, always-populated console needs the Supabase backend (see DEPLOY.md).
