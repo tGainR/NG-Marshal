@@ -13,6 +13,10 @@ import { randomContainer, teuFromIso, tripEarnings } from "./incentive";
 import { ImportedContainer, ImportedDriver, ImportedVehicle, reconcilePool, parseFeedTimestamp } from "./importer";
 
 export interface AppState {
+  // Persist version — bumped only by actions that change SAVED data (not the clock,
+  // not toasts). The save loop watches this, so an idle console does zero work and
+  // never re-serialises the (now large) state on a timer. NOT itself persisted.
+  pv: number;
   now: number; // sim seconds since load
   drivers: Driver[];
   vehicles: Vehicle[];
@@ -279,7 +283,17 @@ function backgroundSim(s: AppState): AppState {
   return s;
 }
 
+// Wrap the core reducer: bump `pv` on any action that actually changed saved data,
+// so the save loop only writes when something real changed. The clock/toast/offer
+// churn (tick, clearToast) never bumps pv, so an idle or ticking view stays free.
+const NON_PERSISTING = new Set(["tick", "clearToast"]);
 function reducer(s: AppState, a: Action): AppState {
+  const ns = coreReducer(s, a);
+  if (ns === s || NON_PERSISTING.has(a.type)) return ns;
+  return { ...ns, pv: (s.pv ?? 0) + 1 };
+}
+
+function coreReducer(s: AppState, a: Action): AppState {
   switch (a.type) {
     case "tick": {
       let s2: AppState = { ...s, now: s.now + 1 };
@@ -302,7 +316,8 @@ function reducer(s: AppState, a: Action): AppState {
         }
       }
       s2 = advanceMyTrip(s2);
-      s2 = backgroundSim(s2);
+      // NOTE: no backgroundSim here. The fleet/pendency only change from real events
+      // (uploads, marks, assignments, driver actions) — never on their own.
       return s2;
     }
 
@@ -950,6 +965,7 @@ function reducer(s: AppState, a: Action): AppState {
 }
 
 const initial: AppState = {
+  pv: 0,
   now: 0,
   drivers: DRIVERS,
   vehicles: VEHICLES,
@@ -990,7 +1006,7 @@ const initial: AppState = {
   toast: null,
 };
 
-const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
+const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action>; refresh: () => Promise<void> } | null>(null);
 
 // Persistable subset — sim-only fields (now, offer, toast, celebration, nextOfferIn) never sync.
 // ── Retention ────────────────────────────────────────────────────────────────
@@ -1056,14 +1072,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // push loop: every 1.5s, if the persistable subset changed, save it.
-  // (interval + ref, not an effect-debounce — the 1s sim tick would forever reset a debounce timer)
+  // save loop: check twice a second, but do NOTHING unless `pv` changed — i.e. unless
+  // an action actually altered saved data. Idle or clock-ticking views never serialise
+  // the (large) state. This is what stops the constant re-writes that were thrashing storage.
   const stateRef = useRef(state);
   stateRef.current = state;
+  const lastPvRef = useRef(-1);
   useEffect(() => {
     const id = setInterval(async () => {
       const ds = dsRef.current;
       if (!ds || !readyRef.current) return;
+      if (stateRef.current.pv === lastPvRef.current) return; // nothing real changed → cheap no-op
+      lastPvRef.current = stateRef.current.pv;
       const payload = JSON.stringify(toPersistable(stateRef.current));
       if (payload === lastPushedRef.current) return;
       const res = await ds.save(SITE.id, JSON.parse(payload), revRef.current);
@@ -1100,17 +1120,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 4000);
     return () => clearInterval(id);
   }, []);
+  // Clock/offer tick — runs ONLY while THIS device's driver is on duty (the mobile app),
+  // for the offer countdown and trip progress. The console is never "on duty", so it
+  // never ticks: its figures change only on real events (upload, plan, mark) or Refresh.
+  const meOnDuty = !!state.drivers.find((d) => d.id === state.meDriverId)?.onDuty;
   useEffect(() => {
+    if (!meOnDuty) return;
     const id = setInterval(() => dispatch({ type: "tick" }), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [meOnDuty]);
   useEffect(() => {
     if (state.toast) {
       const id = setTimeout(() => dispatch({ type: "clearToast" }), 3500);
       return () => clearTimeout(id);
     }
   }, [state.toast]);
-  return <Ctx.Provider value={{ state, dispatch }}>{children}</Ctx.Provider>;
+  // Pull the latest saved snapshot on demand (the Refresh button). In local mode this
+  // re-reads storage; on a shared backend it pulls other people's newest changes.
+  const refresh = async () => {
+    const ds = dsRef.current;
+    if (!ds) return;
+    const snap = await ds.load(SITE.id);
+    if (snap) {
+      revRef.current = snap.rev;
+      lastPushedRef.current = JSON.stringify(snap.state);
+      dispatch({ type: "hydrate", state: snap.state as Partial<AppState> });
+    }
+  };
+
+  return <Ctx.Provider value={{ state, dispatch, refresh }}>{children}</Ctx.Provider>;
 }
 
 export function useApp() {

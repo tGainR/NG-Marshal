@@ -368,3 +368,15 @@ Fixes made from the real data:
 **Debugging note:** the auto-plan `proposal` is intentionally in-memory (not in PERSIST_KEYS), so it's transient — visible in the ProposalPanel, gone on reload. Assignments and confirmations persist.
 
 **Deliverable:** `NG-MARSHAL-USER-MANUAL.md` — 7 sections: what it is, the six screens, the daily workflow (import → masters → mark live → plan → monitor), the mobile app, storage, how it's built, and going to full live use.
+
+## 22 Jul 2026 — Fixed the constant auto-update that was thrashing storage
+
+Reported: figures changed every second and the "database" (browser storage) was crashing. Cause: a per-second demo **simulation tick** ran `backgroundSim` (randomly mutated the whole fleet, generated trips) and advanced the clock, and every mutation made the save loop **re-serialise the now-large state (2k+ containers + history) to storage repeatedly**. Harmless with the tiny demo pool; with real data it thrashed. Fixed so the front-end never auto-updates:
+
+- **`backgroundSim` removed from the tick.** The fleet/pendency now change ONLY from real events — uploads, marks, assignments, driver actions.
+- **Persist only on real change.** Added a non-persisted `pv` (persist-version) counter, bumped only by actions that alter saved data (not the clock/toast). The save loop is a cheap no-op unless `pv` changed — so an idle console does zero work and never re-serialises. Verified: 0 storage writes in 5s idle; exactly 1 write on an upload, then silent.
+- **The console never ticks.** The clock/offer tick now runs ONLY while this device's driver is on duty (the mobile app) — so the console is a static snapshot. Verified: `now` and trips unchanged over 5s on the console; the driver app still gets offers when on duty.
+- **Real live clock** in the header via an isolated component (only that text re-renders each second, not the whole tree).
+- **↻ Refresh button** pulls the latest saved snapshot on demand — figures update when you press it (and it will pull other users' changes once on the shared backend).
+
+Net: the console shows a still picture that updates on **upload, a planning action, or Refresh** — never on its own. Live auto-updating every few hours is a backend job (auto-forward email), exactly as intended.

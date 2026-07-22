@@ -53,8 +53,22 @@ function Td({ children, className = "" }: { children: React.ReactNode; className
   return <td className={`py-2.5 px-2 border-b border-[#EDF0F5] align-middle ${className}`}>{children}</td>;
 }
 
+// Real wall-clock, isolated so only this tiny text re-renders each second — the rest
+// of the console stays still (no per-second re-render of the whole tree).
+function LiveClock() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!now) return <span>live</span>;
+  return <span>live · {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>;
+}
+
 export default function ConsolePage() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, refresh } = useApp();
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [reportOpen, setReportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -211,7 +225,7 @@ Current Pendency:${pendencyNow}
                 <span className="text-[9px] font-bold tracking-[0.14em] uppercase text-[#8FA3C7] block">Project</span>
                 <span className="font-bold text-[15px] flex items-center gap-1.5">{site.name} <span className="text-[#8FA3C7] text-[10px]">▾</span></span>
               </button>
-              <span className="text-[#B9C6DE] text-xs ml-0 block">{SHIFT.label} · live · sim {fmtClock(state.now)}</span>
+              <span className="text-[#B9C6DE] text-xs ml-0 block">{SHIFT.label} · <LiveClock /></span>
               {siteMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setSiteMenu(false)} />
@@ -273,6 +287,14 @@ Current Pendency:${pendencyNow}
             >
               <svg viewBox="0 0 32 32" width="14" height="14" fill="currentColor" aria-hidden><path d="M16 3C9.4 3 4 8.4 4 15c0 2.1.6 4.2 1.6 6L4 27l6.2-1.6c1.8 1 3.8 1.5 5.8 1.5 6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.8c-1.8 0-3.6-.5-5.1-1.4l-.4-.2-3.7 1 1-3.6-.2-.4c-1-1.6-1.5-3.4-1.5-5.2 0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 9.8-10 9.8zm5.5-7.3c-.3-.2-1.8-.9-2-1s-.5-.2-.7.2-.8 1-1 1.2-.4.3-.7.1c-1.8-.9-3-1.6-4.2-3.6-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5s-.7-1.7-1-2.3c-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-1 1-1.3 2.3-.8 3.9.5 1.6 1.6 3.1 1.8 3.3.2.3 3.1 4.8 7.6 6.5 2.8 1.1 3.4.9 4 .8.6-.1 1.8-.7 2-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.2-.6-.4z"/></svg>
               Share to WhatsApp
+            </button>
+            <button
+              onClick={async () => { setRefreshing(true); await refresh(); setRefreshing(false); }}
+              className="border border-[#3A54A0] text-white text-xs font-bold px-3 py-2 rounded-md hover:bg-[#26426f]"
+              title="Pull the latest saved data and refresh the figures"
+              disabled={refreshing}
+            >
+              {refreshing ? "…" : "↻ Refresh"}
             </button>
             <button
               onClick={() => dispatch({ type: "resetDemo" })}
