@@ -140,4 +140,4 @@ The daily workflow above runs today on a laptop. To make it shared and automatic
 ## Quick reference — the daily loop
 **Import pendency → Upload/confirm masters → Mark ITVs live → Plan (quick-allocate or auto-plan) → Confirm → Share report → Monitor on Dashboard → re-import when the next file lands.**
 
-⬆ Upload file · Share to WhatsApp · ↺ Reset are on every screen.
+⬆ Import · Share to WhatsApp · ↻ Refresh · ↺ Reset are on every screen.
