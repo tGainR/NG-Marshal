@@ -32,7 +32,7 @@ At the top of the console is a **KPI strip** (ITVs live, TEUs, pendency, single-
 | **ITV Planner** | **Everything to plan the ITVs in one place** — mark who's live, read the demand, quick-allocate or auto-plan, send each ITV, confirm. |
 | **Setup** | Masters (vendors, ITVs, drivers), equipment & operators, rate card, planning rules, and a Data & storage panel. |
 
-Two controls sit in the **top-right header of every screen**: **⬆ Upload file** (bring data in) and **Share to WhatsApp** (send the deployment report out). **↺ Reset** clears the session back to seed — your undo button during trials.
+Two controls sit in the **top-right header of every screen**: **⬆ Import** (bring data in) and **Share to WhatsApp** (send the deployment report out). **↺ Reset** clears the session back to seed — your undo button during trials.
 
 ---
 
@@ -58,7 +58,7 @@ The order matters. Steps 1–3 set up the shift; 4 plans it; 5 watches it run.
 
 Go to **Setup**.
 - **Vendors** — add Active and any others (mark our own fleet "Own").
-- **ITV master** — click **⬇ ITV master template** to download the blank CSV, fill it in, and upload it with **⬆ Upload file**. Columns: `Call sign, Registration, Vendor, Tags, Driver`. Put **`scanning-only`** in the Tags column for any ITV the vendor keeps on scanning — that becomes a hard rule, so the planner never sends it anywhere else.
+- **ITV master** — click **⬇ ITV master template** to download the blank CSV, fill it in, and upload it via **⬆ Import → ITV master**. Columns: `Call sign, Registration, Vendor, Tags, Driver`. Put **`scanning-only`** in the Tags column for any ITV the vendor keeps on scanning — that becomes a hard rule, so the planner never sends it anywhere else.
 - **Driver master** — click **⬇ Driver master template**, fill it in, upload. Columns: `Driver Name, Phone, Vendor, ITV, Note`. **Phone numbers are required** — the mobile app logs a driver in by their number.
 
 You can also edit any ITV or driver directly in the Setup tables — map a driver to an ITV, set **Only allowed** (hard duty restriction) or **First call** (soft priority: backlog / scanning / check package / import / export).
