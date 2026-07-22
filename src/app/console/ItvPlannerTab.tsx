@@ -54,7 +54,7 @@ function eligibility(v: Vehicle, purpose: MovementType | null): string | null {
   return null;
 }
 
-export default function ItvPlannerTab({ site }: { site: Site }) {
+export default function ItvPlannerTab({ site, allocateBar, proposal }: { site: Site; allocateBar?: React.ReactNode; proposal?: React.ReactNode }) {
   const { state, dispatch } = useApp();
   const [vendorFilter, setVendorFilter] = useState("all");
   const [queueFilter, setQueueFilter] = useState<string>("all");
@@ -198,6 +198,10 @@ export default function ItvPlannerTab({ site }: { site: Site }) {
           })}
         </div>
       </div>
+
+      {/* ── ALLOCATE — quick batches + auto-plan, right where the demand is ── */}
+      {allocateBar}
+      {proposal}
 
       {/* ── FLEET ── */}
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4">

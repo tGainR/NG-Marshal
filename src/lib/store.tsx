@@ -656,13 +656,17 @@ function reducer(s: AppState, a: Action): AppState {
     case "importVehicles": {
       let vehicles = [...s.vehicles];
       let added = 0, updated = 0;
+      // A "scanning-only" (or "scanning") tag in the master becomes the HARD restriction,
+      // so an ITV the vendor designates for scanning is never sent elsewhere by the planner.
+      const scanTag = (tags: string[]) => tags.some((t) => /scan/.test(t.toLowerCase()));
       a.list.forEach((iv) => {
+        const restrict = scanTag(iv.tags) ? (["scanning"] as MovementType[]) : undefined;
         const i = vehicles.findIndex((v) => v.id === iv.id || (iv.reg && v.reg === iv.reg));
         if (i >= 0) {
-          vehicles[i] = { ...vehicles[i], reg: iv.reg ?? vehicles[i].reg, vendor: iv.vendor ?? vehicles[i].vendor, tags: iv.tags.length ? iv.tags : vehicles[i].tags };
+          vehicles[i] = { ...vehicles[i], reg: iv.reg ?? vehicles[i].reg, vendor: iv.vendor ?? vehicles[i].vendor, tags: iv.tags.length ? iv.tags : vehicles[i].tags, restrictTo: restrict ?? vehicles[i].restrictTo };
           updated++;
         } else {
-          vehicles.push({ id: iv.id, reg: iv.reg ?? "", vendor: iv.vendor ?? "—", status: "offline", statusSince: s.now, zone: "Parking", tags: iv.tags });
+          vehicles.push({ id: iv.id, reg: iv.reg ?? "", vendor: iv.vendor ?? "—", status: "offline", statusSince: s.now, zone: "Parking", tags: iv.tags, restrictTo: restrict });
           added++;
         }
       });

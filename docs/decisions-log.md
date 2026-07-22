@@ -356,3 +356,15 @@ Fixes made from the real data:
 **Verified with the full week in the browser:** replayed all 41 import CSVs oldest-first → 239 pending (matches the newest sheet), 2,171 in history, split CT2 67 / CT3 105 / CT4 30 / T2 37; loaded export Sheet1 → 90 across MICT/T2/CT2/CT3/CT4. The EXIM pendency report, Yard map (38 real blocks / 329 containers), and Analytics (1,451 cleared / TAT) all populated correctly from the real files.
 
 **Note on "filling the data":** app state lives in each browser's local storage (no shared backend yet), so data loaded in one browser isn't visible in another. To populate their own console the team drags the week's import CSVs onto **⬆ Upload file** (they replay oldest-first) and loads the export xlsx's Sheet1. A shared, always-populated console needs the Supabase backend (see DEPLOY.md).
+
+## 22 Jul 2026 — Planning consolidated; masters upload; full workflow verified on real data
+
+**ITV Planner is now the single planning sheet.** Quick Allocate + auto-plan (Suggest plan) moved onto it, alongside the shift roster, work queues and fleet table — so "plan the ITVs" is one screen, top to bottom: mark live → read demand → quick-allocate or auto-plan → send each ITV → confirm. The old duplicate assignment board was removed from the Plan tab (now "Demand" — just the pendency-by-destination view). Tab purposes reworded.
+
+**Masters upload + templates.** Setup has ⬇ ITV master template and ⬇ Driver master template buttons (download a blank CSV with the right columns). A `scanning-only` tag in the ITV master now sets the HARD `restrictTo: ["scanning"]` so a scanning-designated ITV is never sent elsewhere by the planner.
+
+**Full workflow verified end-to-end with the real files:** replayed 41 import CSVs → 239 pending / 2,171 history; uploaded a 15-ITV master + 15-driver master (drivers auto-mapped to ITVs); bulk-marked 14 live; Quick Allocate assigned 5 ITVs to a lane; **auto-plan produced a 7-change proposal with the vendor-wise breakdown** ("Active 11 ITVs · 1 → CT2 Import · 7 → CT3 Import…"). Data flows to Dashboard, Pendency report, Yard and Demand queues simultaneously.
+
+**Debugging note:** the auto-plan `proposal` is intentionally in-memory (not in PERSIST_KEYS), so it's transient — visible in the ProposalPanel, gone on reload. Assignments and confirmations persist.
+
+**Deliverable:** `NG-MARSHAL-USER-MANUAL.md` — 7 sections: what it is, the six screens, the daily workflow (import → masters → mark live → plan → monitor), the mobile app, storage, how it's built, and going to full live use.

@@ -20,8 +20,8 @@ const TABS: { id: Tab; label: string; purpose: string }[] = [
   { id: "dashboard", label: "Dashboard",   purpose: "THE WHOLE PICTURE — deployment, fleet status, trips, hot list, open issues and shift analytics, live." },
   { id: "pendency",  label: "Pendency",    purpose: "THE REPORT — the EXIM PENDENCY REPORT in your Excel format, live. Read it, edit the manual cells, print it." },
   { id: "yard",      label: "Yard",        purpose: "SEE — block-wise map of where the containers actually are. Colour it by ageing, direction, flags or fill." },
-  { id: "planning",  label: "Plan",        purpose: "DECIDE — how much work is waiting per destination, what each lane should get, and the rules behind it. No ITV named here." },
-  { id: "itv",       label: "ITV Planner", purpose: "ASSIGN — one row per ITV: send it where. Work queues on top, the fleet below, tentative until you confirm." },
+  { id: "planning",  label: "Demand",      purpose: "SEE THE WORK — how much import & export is waiting at each destination, and the shift deployment summary. No ITV named here." },
+  { id: "itv",       label: "ITV Planner", purpose: "PLAN THE FLEET — everything to plan the ITVs in one place: mark who's live, read the demand, quick-allocate or auto-plan, send each ITV, confirm." },
   { id: "setup",     label: "Setup",       purpose: "CONFIGURE — masters (vendors, ITVs, drivers), equipment & operators, rate card, incentives, planning rules." },
 ];
 
@@ -454,101 +454,8 @@ Current Pendency:${pendencyNow}
         {tab === "pendency" && <PendencySummaryTab site={site} />}
         {tab === "dashboard" && <AnalyticsPanel />}
         {tab === "yard" && <YardTab />}
-        {tab === "itv" && <ItvPlannerTab site={site} />}
+        {tab === "itv" && <ItvPlannerTab site={site} allocateBar={<QuickAllocateBar />} proposal={state.proposal ? <ProposalPanel /> : null} />}
         {tab === "planning" && <PendencyPanel site={site} />}
-        {/* QUICK ALLOCATE + AUTO-PLAN */}
-        {tab === "planning" && <QuickAllocateBar />}
-        {tab === "planning" && state.proposal && <ProposalPanel />}
-        {tab === "planning" && (
-          <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 mt-4 overflow-x-auto">
-            <div className="flex flex-wrap justify-between items-center gap-2 mb-1">
-              <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">
-                ITV assignment board · live global pool (all vendors) · pick &amp; send
-              </p>
-              <span className="text-[11px] text-[#5C6B80]">
-                Import: gate gives the container · Export: pickup yard + destination terminal
-              </span>
-            </div>
-            <table className="w-full text-[12.5px] min-w-[680px]">
-              <thead>
-                <tr><Th>ITV</Th><Th>Driver</Th><Th>Status</Th><Th>Tags / notes</Th><Th>Assignment</Th></tr>
-              </thead>
-              <tbody>
-                {state.vehicles.map((v) => {
-                  const drv = state.drivers.find((d) => d.id === v.driverId);
-                  const st = STATUS_STYLE[v.status];
-                  const asg = state.assignments[v.id];
-                  const assignable = !["breakdown", "no_driver", "offline"].includes(v.status) || v.id === "A333";
-                  const val = asg ? `${asg.pickup ? asg.pickup + "|" : ""}${asg.target}|${asg.purpose}` : "";
-                  return (
-                    <tr key={v.id} className={v.id === "A333" ? "bg-[#FFF7F1]" : ""}>
-                      <Td className="font-mono font-bold">{v.id}</Td>
-                      <Td>{drv ? drv.name.split(" ")[0] : "—"}</Td>
-                      <Td><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${st.cls}`}>{st.label}</span></Td>
-                      <Td className="text-[11px]">
-                        {v.restrictTo?.map((m) => (
-                          <span key={m} className="inline-block bg-[#FBE4E4] text-[#A83232] font-bold rounded px-1.5 py-0.5 mr-1" title="Hard restriction — may ONLY do this">
-                            🔒 {MOVEMENT_LABEL[m]} only
-                          </span>
-                        ))}
-                        {v.preferFor?.map((m) => (
-                          <span key={m} className="inline-block bg-[#E3F4EB] text-[#177A47] font-bold rounded px-1.5 py-0.5 mr-1" title="Preferred — send here first if possible">
-                            ★ {MOVEMENT_LABEL[m]} preferred
-                          </span>
-                        ))}
-                        {v.tags.map((t) => (
-                          <span key={t} className="inline-block bg-[#E8ECF6] text-[#3A54A0] font-bold rounded px-1.5 py-0.5 mr-1">{t}</span>
-                        ))}
-                        {drv?.note && <span className="text-[#8A6100]">✎ {drv.note}</span>}
-                        {!v.restrictTo?.length && !v.preferFor?.length && v.tags.length === 0 && !drv?.note && <span className="text-[#5C6B80]">—</span>}
-                      </Td>
-                      <Td>
-                        <select
-                          value={val}
-                          disabled={!assignable}
-                          onChange={(e) => {
-                            const parts = e.target.value.split("|");
-                            if (!e.target.value) dispatch({ type: "unassignVehicle", vehicleId: v.id });
-                            else if (parts.length === 3)
-                              dispatch({ type: "assignVehicle", vehicleId: v.id, assignment: { pickup: parts[0], target: parts[1], purpose: parts[2] as "export" } });
-                            else
-                              dispatch({ type: "assignVehicle", vehicleId: v.id, assignment: { target: parts[0], purpose: parts[1] as "import" } });
-                          }}
-                          className="border border-[#D8DEE7] rounded-md px-2 py-1.5 text-[12px] bg-white disabled:opacity-40 min-w-[190px]"
-                        >
-                          <option value="">— in pool (unassigned)</option>
-                          <optgroup label="Import (gate gives container)">
-                            <option value="MICT|import">MICT · import</option>
-                            <option value="T2|import">T2 · import</option>
-                            <option value="CT2|import">CT2 · import</option>
-                            <option value="CT3|import">CT3 · import</option>
-                            <option value="CT4|import">CT4 · import</option>
-                          </optgroup>
-                          <optgroup label="Export (pickup → terminal)">
-                            <option value="EXIM-1|T2|export">EXIM-1 → T2 · export</option>
-                            <option value="EXIM-1|CT4|export">EXIM-1 → CT4 · export</option>
-                            <option value="EXIM-2|T2|export">EXIM-2 → T2 · export</option>
-                            <option value="EXIM-2|CT4|export">EXIM-2 → CT4 · export</option>
-                          </optgroup>
-                          <optgroup label="Other">
-                            <option value="FTWZ|ftwz">FTWZ movement</option>
-                            <option value="SCAN|scanning">Scanning movement</option>
-                            <option value="CP|check_package">Check package</option>
-                          </optgroup>
-                        </select>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <p className="text-[11px] text-[#5C6B80] mt-3 border-t border-[#EDF0F5] pt-2.5">
-              Assign A333 (highlighted) and watch the driver&apos;s next offer follow the assignment. Every assignment/change
-              is logged as an audited plan-change event. Scanning-only ITVs should stay on scanning — the tags make it visible;
-              hard rules can be enforced per site config.
-            </p>
-          </div>
-        )}
         {tab === "planning" && (
           <div className="grid lg:grid-cols-2 gap-5 mt-4">
             <div className="bg-white border border-[#D8DEE7] rounded-xl p-4">
@@ -899,6 +806,26 @@ function StoragePanel() {
   );
 }
 
+// Download a CSV so the team knows exactly what columns a master upload needs.
+function downloadCsv(name: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+const ITV_MASTER_TEMPLATE: string[][] = [
+  ["Call sign", "Registration", "Vendor", "Tags", "Driver"],
+  ["A333", "GJ12AB1234", "Active", "scanning-only", "Ramesh Yadav"],
+  ["A157", "GJ12AB5678", "Active", "", "Sohan Bharwad"],
+  ["7118", "GJ12CD9012", "SSPL", "high-capacity", ""],
+];
+const DRIVER_MASTER_TEMPLATE: string[][] = [
+  ["Driver Name", "Phone", "Vendor", "ITV", "Note"],
+  ["Ramesh Yadav", "98250 11223", "Active", "A333", ""],
+  ["Sohan Bharwad", "98250 22334", "Active", "A157", "no MICT"],
+];
+
 function MastersTab() {
   const { state, dispatch } = useApp();
   const [vName, setVName] = useState("");
@@ -984,9 +911,16 @@ function MastersTab() {
 
       {/* ITV MASTER + DRIVER MAPPING */}
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
-        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">
-          ITV master · driver mapping, duty restriction and priority
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">
+            ITV master · driver mapping, duty restriction and priority
+          </p>
+          <button
+            onClick={() => downloadCsv("ITV_master_template.csv", ITV_MASTER_TEMPLATE)}
+            className="text-[11px] font-bold text-[#1F3864] border border-[#1F3864]/40 rounded px-2.5 py-1.5"
+            title="Download a blank ITV master CSV — fill it in and upload it with ⬆ Upload file"
+          >⬇ ITV master template</button>
+        </div>
         <table className="w-full text-[12.5px] min-w-[760px]">
           <thead><tr><Th>ITV</Th><Th>Reg</Th><Th>Vendor</Th><Th>Driver (today)</Th><Th>Only allowed (hard)</Th><Th>First call (priority)</Th></tr></thead>
           <tbody>
@@ -1054,7 +988,14 @@ function MastersTab() {
 
       {/* DRIVER MASTER */}
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4 overflow-x-auto">
-        <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold mb-3">Driver master</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Driver master</p>
+          <button
+            onClick={() => downloadCsv("Driver_master_template.csv", DRIVER_MASTER_TEMPLATE)}
+            className="text-[11px] font-bold text-[#1F3864] border border-[#1F3864]/40 rounded px-2.5 py-1.5"
+            title="Download a blank driver master CSV — phone numbers are needed for the app login"
+          >⬇ Driver master template</button>
+        </div>
         <table className="w-full text-[12.5px] min-w-[480px]">
           <thead><tr><Th>Name</Th><Th>Phone</Th><Th>Vendor</Th><Th>ITV (today)</Th><Th>Note</Th></tr></thead>
           <tbody>
