@@ -42,8 +42,8 @@ The order matters. Steps 1–3 set up the shift; 4 plans it; 5 watches it run.
 
 ### Step 1 — Import the pendency (every 3–4 hours, whenever a file comes)
 
-1. Click **⬆ Upload file** (top-right).
-2. Drop the file(s). The real feeds are already trained:
+1. Click **⬆ Import** (top-right) → the **Import** page opens with a card for each report type, grouped (Pendency, Masters). Click the report you're bringing in.
+2. Pick the file(s). Choosing the report **forces** its type, so nothing is misread; there's also an **auto-detect** option at the bottom. The real feeds are already trained:
    - **Import** — the DPD CSVs (`Import_Containers_DPD_AMTE_…_HHMMhrs.csv`). To load a whole day or week at once, **select all the CSVs together** — they replay oldest-first and the live pendency ends on the newest sheet.
    - **Export** — the daily XLSX (`Mon 13-Jul-26.xlsx`). It has several sheets; load **Sheet1** (the combined list with TERMINAL + GATE CUT-OFF). The per-terminal sheets are subsets of it, so don't load them separately.
 3. In the preview, confirm the **report type** in the dropdown (it auto-detects) and read the **diagnostics line** — how many containers it read, the direction, and which columns it mapped. If a sheet reads **0**, the message says why; that file needs a container column, or a different report type. Then click **Load into system**.

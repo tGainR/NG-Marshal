@@ -78,7 +78,7 @@ export default function ConsolePage() {
     sheets: import("@/lib/importer").ParsedSheet[];
     defaultFormatId?: string;
   } | null>(null);
-  const [uploadMenu, setUploadMenu] = useState(false);
+  const [importCenter, setImportCenter] = useState(false);
   const [siteMenu, setSiteMenu] = useState(false);
 
   useEffect(() => {
@@ -275,51 +275,14 @@ Current Pendency:${pendencyNow}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Upload menu — choose Import / Export / a master explicitly, so it's never a guess. */}
-            <div className="relative">
-              <button
-                onClick={() => setUploadMenu((v) => !v)}
-                className="bg-[#E8641B] text-white text-xs font-bold px-3.5 py-2 rounded-md hover:bg-[#cf560f] transition-colors"
-                title="Upload a file — choose Import, Export, or a master"
-              >
-                ⬆ Upload file ▾
-              </button>
-              {uploadMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setUploadMenu(false)} />
-                  <div className="absolute right-0 mt-1 bg-white border border-[#D8DEE7] rounded-lg shadow-xl z-50 min-w-[230px] overflow-hidden text-[#16243A]">
-                    <p className="px-3 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.1em] text-[#5C6B80]">Pendency (cargo)</p>
-                    {[
-                      { id: "import_pendency", label: "⬆ Import pendency", sub: "DPD CSV — one or many" },
-                      { id: "export_cutoff", label: "⬆ Export cut-off", sub: "daily XLSX" },
-                    ].map((o) => (
-                      <label key={o.id} className="block px-3 py-2 hover:bg-[#FFF4EC] cursor-pointer">
-                        <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
-                          onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs, o.id); e.target.value = ""; setUploadMenu(false); }} />
-                        <span className="block text-[13px] font-bold">{o.label}</span>
-                        <span className="block text-[10.5px] text-[#5C6B80]">{o.sub}</span>
-                      </label>
-                    ))}
-                    <p className="px-3 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.1em] text-[#5C6B80] border-t border-[#EDF0F5]">Masters</p>
-                    {[
-                      { id: "itv_master", label: "ITV master" },
-                      { id: "driver_master", label: "Driver master" },
-                    ].map((o) => (
-                      <label key={o.id} className="block px-3 py-1.5 hover:bg-[#F6F8FB] cursor-pointer text-[12.5px] font-semibold">
-                        <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
-                          onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs, o.id); e.target.value = ""; setUploadMenu(false); }} />
-                        {o.label}
-                      </label>
-                    ))}
-                    <label className="block px-3 py-2 hover:bg-[#F6F8FB] cursor-pointer text-[12px] text-[#5C6B80] border-t border-[#EDF0F5]">
-                      <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
-                        onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs); e.target.value = ""; setUploadMenu(false); }} />
-                      Any file (auto-detect)
-                    </label>
-                  </div>
-                </>
-              )}
-            </div>
+            {/* One Import button → a chooser page listing every report type. */}
+            <button
+              onClick={() => setImportCenter(true)}
+              className="bg-[#E8641B] text-white text-xs font-bold px-3.5 py-2 rounded-md hover:bg-[#cf560f] transition-colors"
+              title="Import data — choose the report type, then pick the file"
+            >
+              ⬆ Import
+            </button>
             <button
               onClick={() => { setReportOpen(true); setCopied(false); }}
               className="flex items-center gap-1.5 bg-[#25D366] text-white text-xs font-bold px-3.5 py-2 rounded-full"
@@ -510,6 +473,12 @@ Current Pendency:${pendencyNow}
             <button onClick={() => setBulkResult(null)} className="text-[11.5px] font-bold text-[#0F5C34]">Dismiss</button>
           </div>
         )}
+        {importCenter && (
+          <ImportCenter
+            onClose={() => setImportCenter(false)}
+            onPick={(fmtId, files) => { setImportCenter(false); handleImportFiles(files, fmtId); }}
+          />
+        )}
         {importPreview && (
           <ImportModal fileName={importPreview.fileName} sheets={importPreview.sheets} defaultFormatId={importPreview.defaultFormatId} onClose={() => setImportPreview(null)} />
         )}
@@ -691,6 +660,66 @@ Current Pendency:${pendencyNow}
 
 
 // ── Masters & settings: vendors, ITV/equipment master, drivers, daily driver↔ITV mapping, rate card ──
+// ── Import center — one entry point; choose the report type, then pick the file ──
+// Renders every entry in REPORT_FORMATS grouped by category, so new report types
+// added to the registry appear here automatically. Ready reports open the file
+// picker (forcing that type); "coming" reports are shown but not yet wired.
+function ImportCenter({ onClose, onPick }: { onClose: () => void; onPick: (formatId: string | undefined, files: File[]) => void }) {
+  const categories = [...new Set(REPORT_FORMATS.map((f) => f.category))];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/45 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl p-5 mt-10 mb-10 w-full max-w-2xl shadow-2xl">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[16px] font-extrabold text-[#16243A]">Import data</p>
+          <button onClick={onClose} className="text-[12px] font-bold text-[#5C6B80] border border-[#D8DEE7] rounded-md px-3 py-1.5">Close</button>
+        </div>
+        <p className="text-[12px] text-[#5C6B80] mb-4">Choose the report you&apos;re importing, then pick the file(s). The app maps the columns for that report and shows what it read before anything is loaded.</p>
+
+        {categories.map((cat) => (
+          <div key={cat} className="mb-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[#5C6B80] mb-2">{cat}</p>
+            <div className="grid sm:grid-cols-2 gap-2.5">
+              {REPORT_FORMATS.filter((f) => f.category === cat).map((f) => {
+                const coming = f.status === "coming";
+                const card = (
+                  <div className={`h-full border rounded-lg p-3 transition-colors ${coming ? "border-dashed border-[#D8DEE7] opacity-70" : "border-[#D8DEE7] hover:border-[#E8641B] hover:bg-[#FFF9F4] cursor-pointer"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13.5px] font-bold text-[#16243A]">{f.icon} {f.label}</span>
+                      {coming
+                        ? <span className="text-[9px] font-bold uppercase tracking-wider text-[#9A6206] bg-[#FDF3E3] rounded px-1.5 py-0.5">Soon</span>
+                        : <span className="text-[15px] text-[#E8641B] font-bold">＋</span>}
+                    </div>
+                    <p className="text-[11px] text-[#5C6B80] mt-1 leading-snug">{f.blurb}</p>
+                    {f.columns.length > 0 && (
+                      <p className="text-[10px] text-[#96A2B4] mt-1.5 font-mono truncate" title={f.columns.join(", ")}>{f.columns.slice(0, 5).join(" · ")}{f.columns.length > 5 ? " …" : ""}</p>
+                    )}
+                  </div>
+                );
+                if (coming) return <div key={f.id} title="Send us a sample file and we'll wire this up">{card}</div>;
+                return (
+                  <label key={f.id} className="block">
+                    <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
+                      onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) onPick(f.id, fs); e.target.value = ""; }} />
+                    {card}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        <div className="border-t border-[#EDF0F5] pt-3">
+          <label className="inline-flex items-center gap-2 text-[12px] font-semibold text-[#5C6B80] cursor-pointer">
+            <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
+              onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) onPick(undefined, fs); e.target.value = ""; }} />
+            <span className="border border-[#D8DEE7] rounded-md px-3 py-1.5">Or import any file — auto-detect the type</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Import modal — pick which report each sheet is, see diagnostics, then load ──
 // The team picks the report format explicitly (rather than us guessing wrong), and
 // a diagnostics line shows exactly what was detected so a stubborn file is never a
@@ -760,7 +789,7 @@ function ImportModal({ fileName, sheets, defaultFormatId, onClose }: { fileName:
                     onChange={(e) => setChoice((c) => ({ ...c, [i]: e.target.value }))}
                     className="border border-[#1F3864] rounded-md px-2 py-1.5 text-[12px] font-bold bg-white"
                   >
-                    {REPORT_FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    {REPORT_FORMATS.filter((f) => f.status !== "coming").map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
                     <option value="skip">— skip this sheet —</option>
                   </select>
                 </div>

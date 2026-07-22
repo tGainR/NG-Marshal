@@ -198,42 +198,84 @@ function findCol(headers: string[], keys: string[]): number {
 export interface ReportFormat {
   id: string;
   label: string;
+  category: string;      // groups the report in the Import chooser (e.g. "Pendency", "Masters")
   kind: ImportKind;
   direction?: "import" | "export";
   blurb: string;
-  columns: string[]; // known/expected headers — shown to the user, used to find the header row
+  icon?: string;         // emoji shown on the chooser card
+  status?: "ready" | "coming";  // "coming" = placeholder for a report we'll wire when the file is confirmed
+  columns: string[];     // known/expected headers — shown to the user, used to find the header row
 }
 
+// The catalogue of reports the app can import. This is the ONLY place to edit when a
+// new report type arrives — add an entry and it appears in the Import chooser + picker
+// automatically. Set status:"coming" to list a report we expect but haven't wired yet.
 export const REPORT_FORMATS: ReportFormat[] = [
   {
     id: "import_pendency",
-    label: "Import pendency — DPD (3-hourly CSV)",
+    label: "Import pendency — DPD",
+    category: "Pendency",
     kind: "container_pool",
     direction: "import",
-    blurb: "The Adani import DPD pendency feed (Import_Containers_DPD_… .csv) — one row per pending import container.",
+    icon: "📥",
+    status: "ready",
+    blurb: "The import DPD pendency feed (Import_Containers_DPD_… .csv, every 3 hrs) — one row per pending import container. Load one file, or many together to build history.",
     columns: ["Container_No", "CtrSize", "TEU", "Cat_Cd", "Pendency(Hrs)", "Scan_Flg", "Terminal", "Location", "Deliverable_Pty"],
   },
   {
     id: "export_cutoff",
-    label: "Export cut-off (daily xlsx)",
+    label: "Export cut-off",
+    category: "Pendency",
     kind: "container_pool",
     direction: "export",
-    blurb: "Export containers by gate cut-off (the daily 'Mon 13-Jul-26.xlsx' sheets). Use the sheet with CONT + TERMINAL + GATE CUT-OFF; skip the stuffing-detail sheet.",
+    icon: "📤",
+    status: "ready",
+    blurb: "Export containers by gate cut-off (the daily 'Mon 13-Jul-26.xlsx'). Use the combined sheet with CONT + TERMINAL + GATE CUT-OFF.",
     columns: ["CONT", "SIZE", "TERMINAL", "GATE CUT-OFF", "LOCATION", "CHA NAME", "VESSEL NAME"],
   },
   {
     id: "itv_master",
     label: "ITV master",
+    category: "Masters",
     kind: "itv_master",
-    blurb: "The fleet list — call signs, registrations, vendor, tags.",
+    icon: "🚛",
+    status: "ready",
+    blurb: "The fleet list — call signs, registrations, vendor, tags. A 'scanning-only' tag becomes a hard rule.",
     columns: ["Call sign", "Registration", "Vendor", "Tags", "Driver"],
   },
   {
     id: "driver_master",
     label: "Driver master",
+    category: "Masters",
     kind: "driver_master",
-    blurb: "Drivers — name, phone (needed for app login), vendor, ITV.",
+    icon: "👷",
+    status: "ready",
+    blurb: "Drivers — name, phone (needed for the app login), vendor, ITV.",
     columns: ["Driver Name", "Phone", "Vendor", "ITV", "Note"],
+  },
+  // ── Reports we expect but haven't wired yet — listed so the chooser shows the full
+  //    picture. Flip status to "ready" and fill columns/direction when the file arrives. ──
+  {
+    id: "yard_inventory",
+    label: "Yard inventory",
+    category: "Pendency",
+    kind: "container_pool",
+    direction: "import",
+    icon: "🗺️",
+    status: "coming",
+    blurb: "Full yard stock by block/position (not just pendency). Send us a sample and we'll wire it.",
+    columns: [],
+  },
+  {
+    id: "empty_report",
+    label: "Empty container report",
+    category: "Pendency",
+    kind: "container_pool",
+    direction: "export",
+    icon: "📦",
+    status: "coming",
+    blurb: "Empties by line/size for repositioning. Send us a sample and we'll wire it.",
+    columns: [],
   },
 ];
 

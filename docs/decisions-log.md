@@ -384,3 +384,7 @@ Net: the console shows a still picture that updates on **upload, a planning acti
 ## 22 Jul 2026 — Upload menu: choose Import / Export / master explicitly
 
 The single "Upload file" button gave no way to say up-front whether a file was import or export — it only auto-detected. Turned it into a dropdown: **Import pendency**, **Export cut-off**, **ITV master**, **Driver master**, and **Any file (auto-detect)**. Picking Import or Export **forces** that direction on every sheet (the modal locks to it), so an ambiguously-shaped file can't be misread. Auto-detect and drag-drop still work as before. Verified: an import-shaped CSV uploaded via the Export option was read as direction EXPORT.
+
+## 22 Jul 2026 — One Import button → a report-type chooser page
+
+Replaced the upload dropdown with a single **⬆ Import** button that opens an **Import** page: a card for every report in REPORT_FORMATS, grouped by category (Pendency, Masters, …). Built to scale — there will be many more report types than import/export pendency, so new ones just get added to the registry and appear here automatically. Added a `category`, `icon`, and `status` ("ready"/"coming") to each format; "coming" reports (e.g. Yard inventory, Empty container report) are shown with a **SOON** badge so the full picture is visible before we wire them. Clicking a ready card opens the file picker and forces that report type through to the preview + diagnostics. An "auto-detect any file" option remains at the bottom. Verified: Import-pendency card → file → preview locked to Import, direction IMPORT.
