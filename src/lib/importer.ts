@@ -205,6 +205,7 @@ export interface ReportFormat {
   icon?: string;         // emoji shown on the chooser card
   status?: "ready" | "coming";  // "coming" = placeholder for a report we'll wire when the file is confirmed
   columns: string[];     // known/expected headers — shown to the user, used to find the header row
+  template?: string[][]; // downloadable blank format: header row + a sample row or two
 }
 
 // The catalogue of reports the app can import. This is the ONLY place to edit when a
@@ -221,6 +222,11 @@ export const REPORT_FORMATS: ReportFormat[] = [
     status: "ready",
     blurb: "The import DPD pendency feed (Import_Containers_DPD_… .csv, every 3 hrs) — one row per pending import container. Load one file, or many together to build history.",
     columns: ["Container_No", "CtrSize", "TEU", "Cat_Cd", "Pendency(Hrs)", "Scan_Flg", "Terminal", "Location", "Deliverable_Pty"],
+    template: [
+      ["Container_No", "CtrSize", "TEU", "Cat_Cd", "Pendency(Hrs)", "Scan_Flg", "Terminal", "Location", "Deliverable_Pty"],
+      ["MSCU1234565", "20", "1", "GEN", "12.5", "N", "CT3", "1H05", "ADLL"],
+      ["TGHU2345677", "40", "2", "ODC", "51.0", "Y", "CT4", "SB04", "AMTE"],
+    ],
   },
   {
     id: "export_cutoff",
@@ -232,6 +238,11 @@ export const REPORT_FORMATS: ReportFormat[] = [
     status: "ready",
     blurb: "Export containers by gate cut-off (the daily 'Mon 13-Jul-26.xlsx'). Use the combined sheet with CONT + TERMINAL + GATE CUT-OFF.",
     columns: ["CONT", "SIZE", "TERMINAL", "GATE CUT-OFF", "LOCATION", "CHA NAME", "VESSEL NAME"],
+    template: [
+      ["SR NO.", "CONT", "SIZE", "TERMINAL", "GATE CUT-OFF", "LOCATION", "CHA NAME", "VESSEL NAME"],
+      ["1", "HAMU4084920", "40", "T2", "7/14/26 23:00", "EXIM", "SSS SAI SHIPPING SERVICES", "TIRUA"],
+      ["2", "CMAU0853081", "20", "CT4", "7/13/26 16:00", "EXIM 2", "NARENDRA LOGISTICS PVT LTD", "CMA CGM PELLEAS"],
+    ],
   },
   {
     id: "itv_master",
@@ -242,6 +253,12 @@ export const REPORT_FORMATS: ReportFormat[] = [
     status: "ready",
     blurb: "The fleet list — call signs, registrations, vendor, tags. A 'scanning-only' tag becomes a hard rule.",
     columns: ["Call sign", "Registration", "Vendor", "Tags", "Driver"],
+    template: [
+      ["Call sign", "Registration", "Vendor", "Tags", "Driver"],
+      ["A333", "GJ12AB1234", "Active", "scanning-only", "Ramesh Yadav"],
+      ["A157", "GJ12AB5678", "Active", "", "Sohan Bharwad"],
+      ["7118", "GJ12CD9012", "SSPL", "high-capacity", ""],
+    ],
   },
   {
     id: "driver_master",
@@ -252,6 +269,11 @@ export const REPORT_FORMATS: ReportFormat[] = [
     status: "ready",
     blurb: "Drivers — name, phone (needed for the app login), vendor, ITV.",
     columns: ["Driver Name", "Phone", "Vendor", "ITV", "Note"],
+    template: [
+      ["Driver Name", "Phone", "Vendor", "ITV", "Note"],
+      ["Ramesh Yadav", "98250 11223", "Active", "A333", ""],
+      ["Sohan Bharwad", "98250 22334", "Active", "A157", "no MICT"],
+    ],
   },
   // ── Reports we expect but haven't wired yet — listed so the chooser shows the full
   //    picture. Flip status to "ready" and fill columns/direction when the file arrives. ──

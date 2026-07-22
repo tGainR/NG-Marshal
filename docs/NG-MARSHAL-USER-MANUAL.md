@@ -77,7 +77,7 @@ The roster tiles show **Live this shift · Confirmed · Manual only · App only 
 
 Everything to plan is on this one screen, top to bottom:
 
-1. **Work queues** — demand per destination (import & export), and how many ITVs you have on each. A queue with pending TEU and **0 ITVs** turns red.
+1. **Work queues — by terminal (round trip).** Each terminal is one bordered box with its **Export (carry out)** and **Import (bring back)** halves together, because one ITV runs a loop: carry an export to the terminal, drop it, pick up an import, bring it back. Under each box: **◆ paired** (exports matched with imports, one round trip each), **straight import** (imports beyond exports — ITVs run empty out and bring import back), and **straight export** (exports beyond imports — out loaded, back empty). Exports are cleared first. A half with pending TEU and 0 ITVs turns red.
 2. **Quick allocate** — the fast tool: `[Active] [10] ITVs → [CT3 · Import]` → **Allocate**. It picks that many eligible live ITVs and sends them, skipping breakdown / no-driver / mid-trip / scanning-restricted units.
 3. **Auto-plan** — click **⚡ Suggest plan**. It reads the live demand and your rules and **proposes** a plan (it never applies on its own): demand-weighted, fair vendor mix, scanning-only units kept on scanning, and a **vendor-wise breakdown — "what to tell each vendor"** (e.g. *Active: 1 → CT2 Import, 7 → CT3 Import…*). Click **Apply plan** to accept, or **Discard**.
 4. **Fleet table** — every ITV as a row: its live status, driver, state, and a **Send to** dropdown. Change any assignment by hand here.

@@ -388,3 +388,15 @@ The single "Upload file" button gave no way to say up-front whether a file was i
 ## 22 Jul 2026 — One Import button → a report-type chooser page
 
 Replaced the upload dropdown with a single **⬆ Import** button that opens an **Import** page: a card for every report in REPORT_FORMATS, grouped by category (Pendency, Masters, …). Built to scale — there will be many more report types than import/export pendency, so new ones just get added to the registry and appear here automatically. Added a `category`, `icon`, and `status` ("ready"/"coming") to each format; "coming" reports (e.g. Yard inventory, Empty container report) are shown with a **SOON** badge so the full picture is visible before we wire them. Clicking a ready card opens the file picker and forces that report type through to the preview + diagnostics. An "auto-detect any file" option remains at the bottom. Verified: Import-pendency card → file → preview locked to Import, direction IMPORT.
+
+## 22 Jul 2026 — Round-trip allocation model, per-terminal grouping, downloadable formats
+
+Three changes from the way ITV allocation actually works at the yard:
+
+1. **Downloadable blank format for every report.** Each report in the Import chooser now has a **⬇ Download blank format** button (header row + a couple of sample rows), so anyone can download the prescribed format, fill their data in, and upload. Templates live in REPORT_FORMATS, one place to edit.
+
+2. **Import + export grouped per terminal.** The ITV Planner work queues are now one **bordered box per terminal** with the Export (carry-out) and Import (bring-back) halves together — you can see at a glance that both belong to, say, T2.
+
+3. **Round-trip allocation model.** An ITV runs a loop: free at the yard → carry an **export** to the terminal → drop it → pick up an **import** → carry it **back**. So one round trip clears one export *and* one import. The planner now computes and shows, per terminal: **◆ paired** = min(export, import) round trips; **straight import** = imports beyond exports (ITVs run empty out, bring import back); **straight export** = exports beyond imports (out loaded, back empty). Exports are cleared first; only the import surplus goes straight. A one-line "how it allocates" note spells this out. Verified: CT3 with 12 import / 5 export → 5 paired + 7 straight import; T2 4/4 → 4 paired.
+
+The deeper step — the auto-plan engine actually sequencing empty legs and terminal-start trips — builds on this model and is the next iteration; the planner now *sees* the paired/straight split to allocate against.

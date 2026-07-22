@@ -74,7 +74,7 @@ export default function ItvPlannerTab({ site, allocateBar, proposal }: { site: S
   //                  leg a box must clear, not a place. An ITV can still be put on
   //                  this duty, so they must be assignable — but they are not tiles
   //                  in the same row as MICT/CT3, which would double-count them.
-  const { queues, movements } = useMemo(() => {
+  const { queues, movements, terminals } = useMemo(() => {
     const isCP = (c: (typeof pool)[number]) => /CHECK|CP\b|PACKAGE/i.test(c.category ?? "");
     const mk = (key: string, target: string, purpose: MovementType, label: string, rows: typeof pool) => ({
       key, target, purpose, label,
@@ -85,22 +85,35 @@ export default function ItvPlannerTab({ site, allocateBar, proposal }: { site: S
     });
 
     const dest: ReturnType<typeof mk>[] = [];
+    // Per-terminal ROUND TRIP. An ITV runs a loop: yard → carry EXPORT to the terminal
+    // → drop it → pick up IMPORT → carry it back to the yard. So one round trip clears
+    // one export AND one import (paired). Exports are cleared first; the surplus import
+    // (import > export) needs ITVs that run EMPTY out and bring import back ("straight
+    // import"); a surplus export needs export-out then empty back ("straight export").
+    const term: {
+      d: (typeof site.destinations)[number];
+      impQ: ReturnType<typeof mk>; expQ: ReturnType<typeof mk>;
+      paired: number; straightImport: number; straightExport: number;
+    }[] = [];
     site.destinations.forEach((d) => {
       if (d.kind === "ftwz") {
         dest.push(mk(`${d.id}·ftwz`, d.id, "ftwz", `${d.label} · Movement`, []));
         return;
       }
-      (["import", "export"] as MovementType[]).forEach((purpose) => {
-        const rows = pool.filter((c) => c.terminal === d.id && (c.direction ?? "import") === purpose);
-        dest.push(mk(`${d.id}·${purpose}`, d.id, purpose, `${d.label} · ${MOVEMENT_LABEL[purpose]}`, rows));
-      });
+      const impRows = pool.filter((c) => c.terminal === d.id && (c.direction ?? "import") === "import");
+      const expRows = pool.filter((c) => c.terminal === d.id && c.direction === "export");
+      const impQ = mk(`${d.id}·import`, d.id, "import", `${d.label} · Import`, impRows);
+      const expQ = mk(`${d.id}·export`, d.id, "export", `${d.label} · Export`, expRows);
+      dest.push(impQ, expQ);
+      const paired = Math.min(impRows.length, expRows.length);
+      term.push({ d, impQ, expQ, paired, straightImport: impRows.length - paired, straightExport: expRows.length - paired });
     });
 
     const move = [
       mk("SCAN·scanning", "SCAN", "scanning", MOVEMENT_LABEL.scanning, pool.filter((c) => c.scan)),
       mk("CP·check_package", "CP", "check_package", MOVEMENT_LABEL.check_package, pool.filter(isCP)),
     ];
-    return { queues: dest, movements: move };
+    return { queues: dest, movements: move, terminals: term };
   }, [pool, site.destinations, state.assignments]);
 
   const allQueues = [...queues, ...movements];
@@ -139,10 +152,10 @@ export default function ItvPlannerTab({ site, allocateBar, proposal }: { site: S
 
       {/* ── WORK QUEUES ── */}
       <div className="bg-white border border-[#D8DEE7] rounded-xl p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div>
-            <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Work queues</p>
-            <p className="text-[12px] text-[#5C6B80] mt-0.5">Demand waiting at each destination, and how many ITVs you have on it. Click a queue to filter the fleet below.</p>
+            <p className="text-[11px] tracking-[0.1em] uppercase text-[#5C6B80] font-bold">Work queues · by terminal (round trip)</p>
+            <p className="text-[12px] text-[#5C6B80] mt-0.5">Each terminal is one round trip: carry an <b>export</b> out, bring an <b>import</b> back. Click a half to filter the fleet below.</p>
           </div>
           {tentative.length > 0 && (
             <button
@@ -153,25 +166,44 @@ export default function ItvPlannerTab({ site, allocateBar, proposal }: { site: S
             </button>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-          {queues.map((q) => {
-            const starved = q.teu > 0 && q.itvs === 0;
-            const on = queueFilter === q.key;
+
+        {/* how allocation works — the round-trip logic in one line */}
+        <p className="text-[11px] text-[#5C6B80] bg-[#F6F8FB] border border-[#EDF0F5] rounded-md px-2.5 py-1.5 mb-3">
+          <b>How it allocates:</b> exports go first — an ITV carries an export to the terminal and brings an import back (a <b className="text-[#7A4Fb0]">paired</b> trip). Extra imports beyond exports need ITVs to run empty out and bring import back (<b className="text-[#1F3864]">straight import</b>); extra exports go out and return empty (<b className="text-[#177A47]">straight export</b>).
+        </p>
+
+        {/* one bordered box per terminal — import and export halves connected */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {terminals.map((t) => {
+            const Half = ({ q, tone, leg }: { q: typeof t.impQ; tone: string; leg: string }) => {
+              const on = queueFilter === q.key;
+              const starved = q.teu > 0 && q.itvs === 0;
+              return (
+                <button
+                  onClick={() => setQueueFilter(on ? "all" : q.key)}
+                  className={`flex-1 text-left px-2.5 py-2 rounded-md border ${on ? "border-[#1F3864] bg-[#F2F5FA]" : starved ? "border-[#F2C7C1] bg-[#FDF6F5]" : "border-[#EDF0F5] bg-white"}`}
+                >
+                  <p className="text-[9.5px] font-bold uppercase tracking-[0.08em]" style={{ color: tone }}>{q.purpose === "import" ? "Import" : "Export"} <span className="text-[#96A2B4] normal-case tracking-normal">· {leg}</span></p>
+                  <p className="text-[18px] font-extrabold tabular-nums leading-tight">{q.teu.toLocaleString("en-IN")}<span className="text-[9.5px] font-semibold text-[#5C6B80] ml-1">TEU</span></p>
+                  <p className="text-[10px] text-[#5C6B80] leading-tight">{q.ctr} ctr{q.flagged > 0 ? ` · ${q.flagged} flagged` : ""}</p>
+                  <p className={`text-[11px] font-bold mt-0.5 ${starved ? "text-[#C0392B]" : q.itvs ? "text-[#177A47]" : "text-[#96A2B4]"}`}>{q.itvs} ITV{q.itvs === 1 ? "" : "s"}</p>
+                </button>
+              );
+            };
             return (
-              <button
-                key={q.key}
-                onClick={() => setQueueFilter(on ? "all" : q.key)}
-                className={`text-left rounded-lg p-3 border-2 ${
-                  on ? "border-[#1F3864] bg-[#F2F5FA]" : starved ? "border-[#F2C7C1] bg-[#FDF6F5]" : "border-[#EDF0F5] bg-white"
-                }`}
-              >
-                <p className="text-[11px] font-bold text-[#16243A] leading-tight">{q.label}</p>
-                <p className="text-[21px] font-extrabold tabular-nums leading-tight mt-1">{q.teu.toLocaleString("en-IN")}<span className="text-[10px] font-semibold text-[#5C6B80] ml-1">TEU</span></p>
-                <p className="text-[10.5px] text-[#5C6B80] font-medium">{q.ctr} ctr · {q.flagged > 0 ? `${q.flagged} flagged` : "none flagged"}</p>
-                <p className={`text-[11.5px] font-bold mt-1 ${starved ? "text-[#C0392B]" : q.itvs ? "text-[#177A47]" : "text-[#5C6B80]"}`}>
-                  {q.itvs} ITV{q.itvs === 1 ? "" : "s"}{starved && " — none assigned"}
-                </p>
-              </button>
+              <div key={t.d.id} className="border-2 border-[#CBD5E6] rounded-xl p-2.5 bg-[#FBFCFE]">
+                <p className="text-[12.5px] font-extrabold font-mono text-[#16243A] mb-1.5 px-0.5">{t.d.label}</p>
+                <div className="flex gap-2">
+                  <Half q={t.expQ} tone="#177A47" leg="carry out" />
+                  <Half q={t.impQ} tone="#1F3864" leg="bring back" />
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 px-0.5 text-[10.5px] font-semibold">
+                  <span className="text-[#7A4Fb0]">◆ {t.paired} paired</span>
+                  {t.straightImport > 0 && <span className="text-[#1F3864]">→ {t.straightImport} straight import</span>}
+                  {t.straightExport > 0 && <span className="text-[#177A47]">→ {t.straightExport} straight export</span>}
+                  {t.paired === 0 && t.straightImport === 0 && t.straightExport === 0 && <span className="text-[#96A2B4]">no work</span>}
+                </div>
+              </div>
             );
           })}
         </div>

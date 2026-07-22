@@ -693,6 +693,12 @@ function ImportCenter({ onClose, onPick }: { onClose: () => void; onPick: (forma
                     {f.columns.length > 0 && (
                       <p className="text-[10px] text-[#96A2B4] mt-1.5 font-mono truncate" title={f.columns.join(", ")}>{f.columns.slice(0, 5).join(" · ")}{f.columns.length > 5 ? " …" : ""}</p>
                     )}
+                    {!coming && f.template && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadCsv(`${f.label.replace(/[^a-z0-9]+/gi, "_")}_format.csv`, f.template!); }}
+                        className="mt-2 text-[10.5px] font-bold text-[#1F3864] border border-[#1F3864]/40 rounded px-2 py-1 hover:bg-[#EAF1FB]"
+                      >⬇ Download blank format</button>
+                    )}
                   </div>
                 );
                 if (coming) return <div key={f.id} title="Send us a sample file and we'll wire this up">{card}</div>;
