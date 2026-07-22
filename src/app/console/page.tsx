@@ -76,7 +76,9 @@ export default function ConsolePage() {
   const [importPreview, setImportPreview] = useState<{
     fileName: string;
     sheets: import("@/lib/importer").ParsedSheet[];
+    defaultFormatId?: string;
   } | null>(null);
+  const [uploadMenu, setUploadMenu] = useState(false);
   const [siteMenu, setSiteMenu] = useState(false);
 
   useEffect(() => {
@@ -178,9 +180,10 @@ Current Pendency:${pendencyNow}
    * timestamp in each filename and replayed OLDEST FIRST, so the history stacks up
    * correctly and the live pendency ends up matching the newest sheet.
    */
-  async function handleImportFiles(files: File[]) {
-    if (files.length === 1) return handleImportFile(files[0]);
-    const { parseFile, guessKind, extractContainers, parseFeedTimestamp } = await import("@/lib/importer");
+  async function handleImportFiles(files: File[], defaultFormatId?: string) {
+    if (files.length === 1) return handleImportFile(files[0], defaultFormatId);
+    const { parseFile, guessKind, extractContainers, parseFeedTimestamp, formatById } = await import("@/lib/importer");
+    const forced = formatById(defaultFormatId);
     const ordered = [...files].sort((a, b) => {
       const ta = parseFeedTimestamp(a.name), tb = parseFeedTimestamp(b.name);
       if (Number.isNaN(ta) && Number.isNaN(tb)) return a.name.localeCompare(b.name);
@@ -193,23 +196,26 @@ Current Pendency:${pendencyNow}
       const sheets = await parseFile(f);
       let any = false;
       for (const sh of sheets) {
-        if (guessKind(sh) !== "container_pool") continue;
-        const list = extractContainers(sh, f.name);
+        // when the user explicitly chose Import or Export, honour it; else auto-detect
+        if (!forced && guessKind(sh) !== "container_pool") continue;
+        if (forced && forced.kind !== "container_pool") continue;
+        const list = extractContainers(sh, f.name, forced?.direction);
         if (!list.length) continue;
         dispatch({ type: "importContainers", list, source: f.name });
         any = true;
       }
       any ? loaded++ : skipped++;
     }
-    setBulkResult(`Replayed ${loaded} file${loaded === 1 ? "" : "s"} oldest-first${skipped ? ` · ${skipped} had no container data` : ""}. Live pendency now matches the newest sheet.`);
+    const what = forced ? `${forced.label} · ` : "";
+    setBulkResult(`${what}Replayed ${loaded} file${loaded === 1 ? "" : "s"} oldest-first${skipped ? ` · ${skipped} had no matching data` : ""}. Live pendency now matches the newest sheet.`);
   }
 
-  // shared import handler — the header Upload button is the only entry point.
-  // Parse only; the modal lets the user pick which report each sheet is before loading.
-  async function handleImportFile(f: File) {
+  // shared import handler — parse only; the modal lets the user confirm the report type.
+  // defaultFormatId (from the Upload menu) pre-selects Import / Export / a master.
+  async function handleImportFile(f: File, defaultFormatId?: string) {
     const { parseFile } = await import("@/lib/importer");
     const sheets = await parseFile(f);
-    setImportPreview({ fileName: f.name, sheets });
+    setImportPreview({ fileName: f.name, sheets, defaultFormatId });
     // no tab change: the preview is a modal, so you stay where you were
   }
 
@@ -269,17 +275,51 @@ Current Pendency:${pendencyNow}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Upload lives in the header — reachable from every tab, always in the same place */}
-            <label
-              className="bg-[#E8641B] text-white text-xs font-bold px-3.5 py-2 rounded-md cursor-pointer hover:bg-[#cf560f] transition-colors"
-              title="Upload import pendency / export cutoff / ITV master / driver master — Excel or CSV. Pick several files at once to load a week of history; they replay oldest-first. Data is added and updated, never overwritten."
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const fs = [...(e.dataTransfer.files ?? [])]; if (fs.length) handleImportFiles(fs); }}
-            >
-              <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
-                onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs); e.target.value = ""; }} />
-              ⬆ Upload file
-            </label>
+            {/* Upload menu — choose Import / Export / a master explicitly, so it's never a guess. */}
+            <div className="relative">
+              <button
+                onClick={() => setUploadMenu((v) => !v)}
+                className="bg-[#E8641B] text-white text-xs font-bold px-3.5 py-2 rounded-md hover:bg-[#cf560f] transition-colors"
+                title="Upload a file — choose Import, Export, or a master"
+              >
+                ⬆ Upload file ▾
+              </button>
+              {uploadMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setUploadMenu(false)} />
+                  <div className="absolute right-0 mt-1 bg-white border border-[#D8DEE7] rounded-lg shadow-xl z-50 min-w-[230px] overflow-hidden text-[#16243A]">
+                    <p className="px-3 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.1em] text-[#5C6B80]">Pendency (cargo)</p>
+                    {[
+                      { id: "import_pendency", label: "⬆ Import pendency", sub: "DPD CSV — one or many" },
+                      { id: "export_cutoff", label: "⬆ Export cut-off", sub: "daily XLSX" },
+                    ].map((o) => (
+                      <label key={o.id} className="block px-3 py-2 hover:bg-[#FFF4EC] cursor-pointer">
+                        <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
+                          onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs, o.id); e.target.value = ""; setUploadMenu(false); }} />
+                        <span className="block text-[13px] font-bold">{o.label}</span>
+                        <span className="block text-[10.5px] text-[#5C6B80]">{o.sub}</span>
+                      </label>
+                    ))}
+                    <p className="px-3 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.1em] text-[#5C6B80] border-t border-[#EDF0F5]">Masters</p>
+                    {[
+                      { id: "itv_master", label: "ITV master" },
+                      { id: "driver_master", label: "Driver master" },
+                    ].map((o) => (
+                      <label key={o.id} className="block px-3 py-1.5 hover:bg-[#F6F8FB] cursor-pointer text-[12.5px] font-semibold">
+                        <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
+                          onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs, o.id); e.target.value = ""; setUploadMenu(false); }} />
+                        {o.label}
+                      </label>
+                    ))}
+                    <label className="block px-3 py-2 hover:bg-[#F6F8FB] cursor-pointer text-[12px] text-[#5C6B80] border-t border-[#EDF0F5]">
+                      <input type="file" accept=".xlsx,.xls,.csv" multiple className="hidden"
+                        onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) handleImportFiles(fs); e.target.value = ""; setUploadMenu(false); }} />
+                      Any file (auto-detect)
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={() => { setReportOpen(true); setCopied(false); }}
               className="flex items-center gap-1.5 bg-[#25D366] text-white text-xs font-bold px-3.5 py-2 rounded-full"
@@ -471,7 +511,7 @@ Current Pendency:${pendencyNow}
           </div>
         )}
         {importPreview && (
-          <ImportModal fileName={importPreview.fileName} sheets={importPreview.sheets} onClose={() => setImportPreview(null)} />
+          <ImportModal fileName={importPreview.fileName} sheets={importPreview.sheets} defaultFormatId={importPreview.defaultFormatId} onClose={() => setImportPreview(null)} />
         )}
         {tab === "pendency" && <PendencySummaryTab site={site} />}
         {tab === "dashboard" && <AnalyticsPanel />}
@@ -655,12 +695,13 @@ Current Pendency:${pendencyNow}
 // The team picks the report format explicitly (rather than us guessing wrong), and
 // a diagnostics line shows exactly what was detected so a stubborn file is never a
 // silent failure.
-function ImportModal({ fileName, sheets, onClose }: { fileName: string; sheets: import("@/lib/importer").ParsedSheet[]; onClose: () => void }) {
+function ImportModal({ fileName, sheets, defaultFormatId, onClose }: { fileName: string; sheets: import("@/lib/importer").ParsedSheet[]; defaultFormatId?: string; onClose: () => void }) {
   const { dispatch } = useApp();
-  // per-sheet chosen format id (default = best guess)
+  // per-sheet chosen format: if the user picked Import/Export/master from the Upload
+  // menu, honour that for every sheet; otherwise fall back to auto-detect.
   const [choice, setChoice] = useState<Record<number, string>>(() => {
     const init: Record<number, string> = {};
-    sheets.forEach((sh, i) => { init[i] = guessFormat(sh)?.id ?? "skip"; });
+    sheets.forEach((sh, i) => { init[i] = defaultFormatId ?? guessFormat(sh)?.id ?? "skip"; });
     return init;
   });
 

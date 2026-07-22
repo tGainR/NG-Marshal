@@ -380,3 +380,7 @@ Reported: figures changed every second and the "database" (browser storage) was 
 - **↻ Refresh button** pulls the latest saved snapshot on demand — figures update when you press it (and it will pull other users' changes once on the shared backend).
 
 Net: the console shows a still picture that updates on **upload, a planning action, or Refresh** — never on its own. Live auto-updating every few hours is a backend job (auto-forward email), exactly as intended.
+
+## 22 Jul 2026 — Upload menu: choose Import / Export / master explicitly
+
+The single "Upload file" button gave no way to say up-front whether a file was import or export — it only auto-detected. Turned it into a dropdown: **Import pendency**, **Export cut-off**, **ITV master**, **Driver master**, and **Any file (auto-detect)**. Picking Import or Export **forces** that direction on every sheet (the modal locks to it), so an ambiguously-shaped file can't be misread. Auto-detect and drag-drop still work as before. Verified: an import-shaped CSV uploaded via the Export option was read as direction EXPORT.
