@@ -400,3 +400,11 @@ Three changes from the way ITV allocation actually works at the yard:
 3. **Round-trip allocation model.** An ITV runs a loop: free at the yard → carry an **export** to the terminal → drop it → pick up an **import** → carry it **back**. So one round trip clears one export *and* one import. The planner now computes and shows, per terminal: **◆ paired** = min(export, import) round trips; **straight import** = imports beyond exports (ITVs run empty out, bring import back); **straight export** = exports beyond imports (out loaded, back empty). Exports are cleared first; only the import surplus goes straight. A one-line "how it allocates" note spells this out. Verified: CT3 with 12 import / 5 export → 5 paired + 7 straight import; T2 4/4 → 4 paired.
 
 The deeper step — the auto-plan engine actually sequencing empty legs and terminal-start trips — builds on this model and is the next iteration; the planner now *sees* the paired/straight split to allocate against.
+
+## 22 Jul 2026 — Import & export download templates match the real Adani files exactly
+
+The downloadable blank formats were simplified/reordered. Changed them to the EXACT headers of the real sample files:
+- **Import pendency**: `Container_No, BS, ISO, COA, CtrSize, TEU, Wt, Cat_Cd, Entry_Dttm, Exit_Dttm, FPD, VCN, Vessel_Name(D), Cstm Seal, Liner_Seal, Pendency(Hrs), Exit_Mode, DPD_Flg, Deliverable_Pty, Scan_Flg, Terminal, Location, release_dttm` (23 cols) + a real sample row.
+- **Export cut-off**: Sheet1 header `SR NO., CONT, SIZE, CHA NAME, STUFFING MODE, MOV-REC DATE, VCN NO, VESSEL NAME, TERMINAL, GATE CUT-OFF, LOCATION, STUFFING VESSEL, TERMINAL3, GATE CUT-OFF, REMARK, LINE SEAL` (16 cols, keeping the file's duplicate GATE CUT-OFF) + a real sample row.
+
+The `columns` hints on the cards updated to match. Parsing of the real files was already correct (verified again: import 239/239, export Sheet1 90/90, 0 dropped) — this fixes the *download template* so it matches the format the terminal actually sends.

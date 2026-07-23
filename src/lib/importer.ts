@@ -221,11 +221,12 @@ export const REPORT_FORMATS: ReportFormat[] = [
     icon: "📥",
     status: "ready",
     blurb: "The import DPD pendency feed (Import_Containers_DPD_… .csv, every 3 hrs) — one row per pending import container. Load one file, or many together to build history.",
-    columns: ["Container_No", "CtrSize", "TEU", "Cat_Cd", "Pendency(Hrs)", "Scan_Flg", "Terminal", "Location", "Deliverable_Pty"],
+    // EXACT columns of the real Adani DPD file (Import_Containers_DPD_AMTE_… .csv).
+    columns: ["Container_No", "BS", "ISO", "COA", "CtrSize", "TEU", "Wt", "Cat_Cd", "Entry_Dttm", "Exit_Dttm", "FPD", "VCN", "Vessel_Name(D)", "Cstm Seal", "Liner_Seal", "Pendency(Hrs)", "Exit_Mode", "DPD_Flg", "Deliverable_Pty", "Scan_Flg", "Terminal", "Location", "release_dttm"],
     template: [
-      ["Container_No", "CtrSize", "TEU", "Cat_Cd", "Pendency(Hrs)", "Scan_Flg", "Terminal", "Location", "Deliverable_Pty"],
-      ["MSCU1234565", "20", "1", "GEN", "12.5", "N", "CT3", "1H05", "ADLL"],
-      ["TGHU2345677", "40", "2", "ODC", "51.0", "Y", "CT4", "SB04", "AMTE"],
+      ["Container_No", "BS", "ISO", "COA", "CtrSize", "TEU", "Wt", "Cat_Cd", "Entry_Dttm", "Exit_Dttm", "FPD", "VCN", "Vessel_Name(D)", "Cstm Seal", "Liner_Seal", "Pendency(Hrs)", "Exit_Mode", "DPD_Flg", "Deliverable_Pty", "Scan_Flg", "Terminal", "Location", "release_dttm"],
+      ["TRIU0661364", "I", "22P3", "CMA", "20", "1", "31590", "ODC", "11-07-2026 16:57", "", "INDAY", "2602334", "CMA CGM VELA", "", "NA", "136.54", "R", "Y", "ADLL", "N", "CT4", "SB05", "11-07-2026 22:27"],
+      ["TEXU0027989", "I", "22P3", "CMA", "20", "1", "31690", "GEN", "11-07-2026 16:58", "", "INDAY", "2602334", "CMA CGM VELA", "", "NA", "12.53", "R", "Y", "AMTE", "N", "CT3", "SB04", ""],
     ],
   },
   {
@@ -236,12 +237,13 @@ export const REPORT_FORMATS: ReportFormat[] = [
     direction: "export",
     icon: "📤",
     status: "ready",
-    blurb: "Export containers by gate cut-off (the daily 'Mon 13-Jul-26.xlsx'). Use the combined sheet with CONT + TERMINAL + GATE CUT-OFF.",
-    columns: ["CONT", "SIZE", "TERMINAL", "GATE CUT-OFF", "LOCATION", "CHA NAME", "VESSEL NAME"],
+    blurb: "Export containers by gate cut-off (the daily 'Mon 13-Jul-26.xlsx', Sheet1 — the combined list with CONT + TERMINAL + GATE CUT-OFF).",
+    // EXACT columns of the real daily export workbook (Sheet1 / combined list).
+    columns: ["SR NO.", "CONT", "SIZE", "CHA NAME", "STUFFING MODE", "MOV-REC DATE", "VCN NO", "VESSEL NAME", "TERMINAL", "GATE CUT-OFF", "LOCATION", "STUFFING VESSEL", "TERMINAL3", "GATE CUT-OFF", "REMARK", "LINE SEAL"],
     template: [
-      ["SR NO.", "CONT", "SIZE", "TERMINAL", "GATE CUT-OFF", "LOCATION", "CHA NAME", "VESSEL NAME"],
-      ["1", "HAMU4084920", "40", "T2", "7/14/26 23:00", "EXIM", "SSS SAI SHIPPING SERVICES", "TIRUA"],
-      ["2", "CMAU0853081", "20", "CT4", "7/13/26 16:00", "EXIM 2", "NARENDRA LOGISTICS PVT LTD", "CMA CGM PELLEAS"],
+      ["SR NO.", "CONT", "SIZE", "CHA NAME", "STUFFING MODE", "MOV-REC DATE", "VCN NO", "VESSEL NAME", "TERMINAL", "GATE CUT-OFF", "LOCATION", "STUFFING VESSEL", "TERMINAL3", "GATE CUT-OFF", "REMARK", "LINE SEAL"],
+      ["1903", "HAMU4084920", "40", "SSS SAI SHIPPING SERVICES PRIVATE LIMITED", "BUFFER", "7/12/26 15:00", "2602016", "TIRUA", "T2", "7/14/26 23:00", "EXIM", "", "", "", "", ""],
+      ["81", "CMAU0853081", "20", "NARENDRA LOGISTICS PVT LTD", "BUFFER", "7/11/26 0:30", "2602206", "CMA CGM PELLEAS", "CT4", "7/13/26 16:00", "EXIM 2", "", "", "", "", ""],
     ],
   },
   {
